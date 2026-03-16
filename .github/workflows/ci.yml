@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  smoke:
+    name: Smoke (Scheduling)
+    runs-on: ubuntu-latest
+    concurrency:
+      group: cosmos-smoke
+      cancel-in-progress: true
+    env:
+      COSMOS_DB_ENDPOINT: ${{ secrets.COSMOS_DB_ENDPOINT_CI }}
+      COSMOS_DB_KEY: ${{ secrets.COSMOS_DB_KEY_CI }}
+      COSMOS_DB_DATABASE: ${{ secrets.COSMOS_DB_DATABASE_CI }}
+      COSMOS_DB_DATABASE_ID: ${{ secrets.COSMOS_DB_DATABASE_CI }}
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check required secrets
+        id: secrets
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.COSMOS_DB_ENDPOINT_CI }}" ] || [ -z "${{ secrets.COSMOS_DB_KEY_CI }}" ] || [ -z "${{ secrets.COSMOS_DB_DATABASE_CI }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Required CI secrets are not set; skipping smoke tests."
+            exit 0
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+          # Emails are optional for CI. If email secrets are present, enable email sending.
+          if [ -n "${{ secrets.EMAIL_USER }}" ] && [ -n "${{ secrets.EMAIL_PASSWORD }}" ]; then
+            echo "EMAIL_USER=${{ secrets.EMAIL_USER }}" >> "$GITHUB_ENV"
+            echo "EMAIL_PASSWORD=${{ secrets.EMAIL_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "SMOKE_DISABLE_EMAIL=0" >> "$GITHUB_ENV"
+          else
+            echo "SMOKE_DISABLE_EMAIL=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Checkout
+        if: ${{ steps.secrets.outputs.configured == 'true' }}
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: ${{ steps.secrets.outputs.configured == 'true' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        if: ${{ steps.secrets.outputs.configured == 'true' }}
+        run: npm ci
+
+      - name: Run smoke test
+        if: ${{ steps.secrets.outputs.configured == 'true' }}
+        run: npm run test:smoke
