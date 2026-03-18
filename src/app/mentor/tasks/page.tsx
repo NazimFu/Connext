@@ -1433,14 +1433,14 @@ export default function MentorTasksPage() {
                               </a>
                             </div>
                           )}
-                          {(menteeDetails.attachmentPath || menteeDetails.cv_link) && menteeDetails.allowCVShare && (
+                          {(menteeDetails.cv_link) && menteeDetails.allowCVShare && (
                             <div className="flex items-start gap-2">
                               <span className="text-purple-700 font-medium min-w-[100px]">CV:</span>
                               <button 
                                 onClick={() => {
-                                  const cvUrl = (menteeDetails.attachmentPath || menteeDetails.cv_link)!.startsWith('http') 
-                                    ? (menteeDetails.attachmentPath || menteeDetails.cv_link)
-                                    : `/api/attachment-proxy?url=${encodeURIComponent((menteeDetails.attachmentPath || menteeDetails.cv_link)!)}`;
+                                  const cvUrl = (menteeDetails.cv_link)!.startsWith('http') 
+                                    ? (menteeDetails.cv_link)
+                                    : `/api/attachment-proxy?url=${encodeURIComponent((menteeDetails.cv_link)!)}`;
                                   window.open(cvUrl, '_blank');
                                 }}
                                 className="text-blue-600 hover:underline break-all text-left cursor-pointer"

@@ -36,19 +36,19 @@ export default function EditProfilePage() {
             console.log('Full user object:', user);
             console.log('LinkedIn value:', (user as any).linkedin);
             console.log('GitHub value:', (user as any).github);
-            console.log('AttachmentPath value:', (user as any).attachmentPath);
+            console.log('CV Link value:', (user as any).cv_link);
             setFormData({
                 name: user.name || '',
                 email: user.email || '',
                 linkedin: (user as any).linkedin || '',
                 github: (user as any).github || '',
-                cv_link: (user as any).attachmentPath || (user as any).cv_link || ''
+                cv_link: (user as any).cv_link || ''
             });
             setAllowCVShare((user as any).allowCVShare ?? false);
             console.log('FormData after setting:', {
                 linkedin: (user as any).linkedin || '',
                 github: (user as any).github || '',
-                cv_link: (user as any).attachmentPath || (user as any).cv_link || ''
+                cv_link: (user as any).cv_link || ''
             });
         }
     }, [user]);
