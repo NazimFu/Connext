@@ -53,6 +53,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 });
     }
 
+    // Validate email format before touching the DB or sending anything
+    // RFC 5322-ish regex — rejects obvious invalids like "abc", "abc@", "@abc.com"
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (!emailRegex.test(String(email).trim())) {
+      return NextResponse.json(
+        { error: 'Email address is invalid. Please check and try again.' },
+        { status: 400 }
+      );
+    }
+
     // Resolve cv_link — accept either field name from the frontend
     const resolvedCvLink = cv_link || attachmentPath || '';
 
@@ -111,7 +121,50 @@ export async function POST(request: NextRequest) {
       personal_statement: personal_statement || ''
     };
 
-    console.log(`[SEND-CODE] Creating temp_signup for ${role}:`, {
+    // ── Send email FIRST before writing anything to the DB ──────────────────
+    // This way, if the email address is invalid or delivery fails, no orphan
+    // temp_signup document is left in Cosmos.
+    console.log(`[SEND-CODE] Attempting email delivery to: ${email}`);
+    try {
+      await sendEmail({
+        to: email,
+        subject: 'Your CONNEXT Verification Code',
+        template: 'signup-verification-code',
+        data: {
+          userName: name || 'User',
+          verificationCode: verificationCode,
+          expiresIn: '10 minutes',
+        },
+      });
+    } catch (emailErr: any) {
+      console.error('[SEND-CODE] Email delivery failed — not writing to DB:', emailErr.message);
+
+      // Nodemailer surfaces invalid-address errors in responseCode / response
+      const msg: string = emailErr.message || '';
+      const isInvalidAddress =
+        emailErr.responseCode === 550 ||
+        emailErr.responseCode === 553 ||
+        msg.includes('invalid') ||
+        msg.includes('Invalid') ||
+        msg.includes('does not exist') ||
+        msg.includes('unknown user') ||
+        msg.includes('bad destination') ||
+        msg.includes('550') ||
+        msg.includes('553');
+
+      return NextResponse.json(
+        {
+          error: isInvalidAddress
+            ? 'Email address is invalid. Please check and try again.'
+            : 'Failed to send verification email. Please try again.',
+          details: emailErr.message,
+        },
+        { status: 400 }
+      );
+    }
+
+    // ── Email delivered — now safe to write the temp document ─────────────
+    console.log(`[SEND-CODE] Email sent. Creating temp_signup for ${role}:`, {
       signupId,
       email: document.email,
       role: document.role,
@@ -121,18 +174,6 @@ export async function POST(request: NextRequest) {
 
     const { resource: created } = await container.items.create(document);
     console.log(`[SEND-CODE] Document created successfully:`, created?.id);
-
-    // Send email using standardized template
-    await sendEmail({
-      to: email,
-      subject: 'Your CONNEXT Verification Code',
-      template: 'signup-verification-code',
-      data: {
-        userName: name || 'User',
-        verificationCode: verificationCode,
-        expiresIn: '10 minutes',
-      },
-    });
 
     return NextResponse.json({
       success: true,

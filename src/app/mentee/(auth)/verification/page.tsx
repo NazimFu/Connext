@@ -154,6 +154,8 @@ export default function VerificationPage() {
             const result = await response.json();
             
             if (!response.ok) {
+                // Use the server's error message directly — it already has
+                // human-friendly wording (e.g. "Email address is invalid…")
                 throw new Error(result.error || 'Failed to send verification code');
             }
             
@@ -169,10 +171,13 @@ export default function VerificationPage() {
 
         } catch (error) {
             console.error('Submit error:', error);
+            const msg = error instanceof Error ? error.message : 'Failed to send verification code';
             toast({
                 variant: 'destructive',
-                title: 'Error',
-                description: error instanceof Error ? error.message : 'Failed to send verification code',
+                title: msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('email')
+                    ? 'Invalid Email Address'
+                    : 'Error',
+                description: msg,
             });
         } finally {
             setIsSubmitting(false);
@@ -353,10 +358,13 @@ export default function VerificationPage() {
             });
         } catch (error) {
             console.error('Failed to resend code:', error);
+            const msg = error instanceof Error ? error.message : 'Failed to resend code';
             toast({
                 variant: "destructive",
-                title: "Error",
-                description: error instanceof Error ? error.message : "Failed to resend code.",
+                title: msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('email')
+                    ? 'Invalid Email Address'
+                    : 'Error',
+                description: msg,
             });
         } finally {
             setIsSubmitting(false);
