@@ -51,7 +51,6 @@ export default function VerificationPage() {
         const github = sessionStorage.getItem('profile_github');
         
         if (!storedEmail || !storedPassword || !name) {
-            // Redirect to signup if credentials or profile not found
             router.push('/signup');
             return;
         }
@@ -85,8 +84,6 @@ export default function VerificationPage() {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
-
-
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
@@ -95,7 +92,6 @@ export default function VerificationPage() {
             let cvPath = '';
             let personalStatement = '';
             
-            // Validate personal statement word count if provided
             if (essay) {
                 const wordCount = essay.trim().split(/\s+/).filter(word => word.length > 0).length;
                 if (wordCount < 50) {
@@ -110,7 +106,6 @@ export default function VerificationPage() {
                 personalStatement = essay;
             }
             
-            // If CV file is uploaded, upload it first
             if (cvFile) {
                 console.log('[MENTEE-VERIFY] Uploading CV file:', cvFile.name);
                 const formData = new FormData();
@@ -127,16 +122,15 @@ export default function VerificationPage() {
 
                 const uploadData = await uploadRes.json();
                 console.log('[MENTEE-VERIFY] Upload response:', uploadData);
-                cvPath = uploadData.path; // Use path instead of url
+                cvPath = uploadData.path;
                 console.log('[MENTEE-VERIFY] CV path to be stored:', cvPath);
             }
 
             console.log('[MENTEE-VERIFY] Sending signup code with data:', {
-                attachmentPath: cvPath,
+                cv_link: cvPath,
                 hasPersonalStatement: !!personalStatement
             });
 
-            // Send verification code with all data (credentials, profile, verification)
             const response = await fetch('/api/auth/send-signup-code', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -151,7 +145,7 @@ export default function VerificationPage() {
                     linkedin: profileData.linkedin,
                     github: profileData.github,
                     allowCVShare: allowCVShare,
-                    attachmentPath: cvPath,
+                    cv_link: cvPath,
                     linkedin_url: linkedinUrl,
                     personal_statement: personalStatement
                 }),
@@ -214,9 +208,9 @@ export default function VerificationPage() {
                 throw new Error(result.error || 'Failed to verify code');
             }
             
-            // Step 2: Create Firebase account using stored credentials
+            // Step 2: Create Firebase authentication account
             const { auth } = await import('@/lib/firebase');
-            const { createUserWithEmailAndPassword } = await import('firebase/auth');
+            const { createUserWithEmailAndPassword, signOut } = await import('firebase/auth');
             
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             if (!userCredential.user?.uid) {
@@ -225,7 +219,7 @@ export default function VerificationPage() {
             
             const uid = userCredential.user.uid;
             console.log('Firebase account created:', uid);
-            
+
             // Step 3: Create mentee profile in database
             const profileResponse = await fetch('/api/users', {
                 method: 'POST',
@@ -240,7 +234,7 @@ export default function VerificationPage() {
                     mentee_institution: result.data?.mentee_institution || profileData.mentee_institution,
                     linkedin: result.data?.linkedin || profileData.linkedin,
                     github: result.data?.github || profileData.github,
-                    attachmentPath: result.data?.attachmentPath || '',
+                    cv_link: result.data?.cv_link || result.data?.attachmentPath || '',
                     allowCVShare: result.data?.allowCVShare || false,
                     linkedin_url: result.data?.linkedin_url || '',
                     personal_statement: result.data?.personal_statement || ''
@@ -253,8 +247,14 @@ export default function VerificationPage() {
             }
             
             console.log('Mentee profile created successfully');
+
+            // Step 4: IMMEDIATELY sign out so onAuthStateChanged does NOT fire and
+            // redirect the user away from verification-pending. The user is not
+            // approved yet — they should land on verification-pending only.
+            await signOut(auth);
+            console.log('Signed out after account creation to prevent auth redirect');
             
-            // Clear sessionStorage
+            // Step 5: Clear sessionStorage
             sessionStorage.removeItem('signup_email');
             sessionStorage.removeItem('signup_password');
             sessionStorage.removeItem('profile_name');
@@ -266,14 +266,12 @@ export default function VerificationPage() {
             
             toast({
                 title: "Account Created!",
-                description: "Your account has been created successfully.",
+                description: "Your account has been created. Please wait for verification approval.",
             });
             
-            // Wait a bit for auth state to update
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Route to verification pending page
+            // Step 6: Navigate directly — auth state is cleared so nothing can hijack this
             router.push('/mentee/verification-pending');
+
         } catch (error) {
             console.error('Failed to verify code:', error);
             toast({
@@ -292,7 +290,6 @@ export default function VerificationPage() {
             let cvPath = '';
             let personalStatement = '';
             
-            // Validate personal statement word count if provided
             if (essay) {
                 const wordCount = essay.trim().split(/\s+/).filter(word => word.length > 0).length;
                 if (wordCount < 50) {
@@ -316,7 +313,7 @@ export default function VerificationPage() {
                 });
                 if (uploadRes.ok) {
                     const uploadData = await uploadRes.json();
-                    cvPath = uploadData.path; // Use path instead of url
+                    cvPath = uploadData.path;
                 }
             }
 
@@ -334,7 +331,7 @@ export default function VerificationPage() {
                     linkedin: profileData.linkedin,
                     github: profileData.github,
                     allowCVShare: allowCVShare,
-                    attachmentPath: cvPath,
+                    cv_link: cvPath,
                     linkedin_url: linkedinUrl,
                     personal_statement: personalStatement
                 }),

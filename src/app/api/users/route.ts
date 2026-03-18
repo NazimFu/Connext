@@ -1,16 +1,8 @@
+// src/app/api/users/route.ts
 import { NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { User, Mentor } from '@/lib/types';
 
-// Helper function to transform available_slots to availability format
-function transformAvailabilitySlots(slots: Array<{ day: string; time: string[] }>) {
-  return slots.reduce((acc, slot) => {
-    acc[slot.day] = slot.time;
-    return acc;
-  }, {} as Record<string, string[]>);
-}
-
-// Create a new user (mentee or mentor)
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -36,10 +28,7 @@ export async function POST(request: Request) {
         github
       } = body;
 
-      // Generate unique mentee ID for the mentor
       const menteeId = `mentee_${uid}`;
-
-      // Create mentor profile in mentor container with mentee_id reference
       const mentorContainer = database.container('mentor');
       
       const newMentor = {
@@ -60,8 +49,8 @@ export async function POST(request: Request) {
         linkedin: linkedin || '',
         github: github || '',
         scheduling: [],
-        tokens: 3, // Initialize with 3 tokens
-        mentee_id: menteeId, // Store the mentee ID reference for booking capabilities
+        tokens: 3,
+        mentee_id: menteeId,
         createdAt: new Date().toISOString()
       };
 
@@ -71,7 +60,6 @@ export async function POST(request: Request) {
         throw new Error('Failed to create mentor record');
       }
 
-      // Return mentor info with mentee_id
       const userResponse = {
         id: createdMentor.id,
         name: createdMentor.mentor_name,
@@ -81,7 +69,7 @@ export async function POST(request: Request) {
         verified: true,
         verificationStatus: 'approved',
         tokens: 3,
-        mentee_id: menteeId // Include mentee ID in response
+        mentee_id: menteeId
       };
 
       return NextResponse.json({
@@ -91,7 +79,6 @@ export async function POST(request: Request) {
       }, { status: 201 });
 
     } else {
-      // Handle regular mentee creation
       const { 
         name, 
         mentee_age, 
@@ -100,11 +87,15 @@ export async function POST(request: Request) {
         linkedin, 
         github, 
         menteeUID,
-        attachmentPath,
+        cv_link,           // ← primary field
+        attachmentPath,    // ← legacy fallback
         allowCVShare,
         linkedin_url,
         personal_statement
       } = body;
+
+      // Resolve cv_link — accept either field name sent by the frontend
+      const resolvedCvLink = cv_link || attachmentPath || '';
 
       const menteeContainer = database.container('mentee');
 
@@ -121,7 +112,8 @@ export async function POST(request: Request) {
         mentee_institution: mentee_institution || '',
         linkedin: linkedin || '',
         github: github || '',
-        attachmentPath: attachmentPath || '',
+        cv_link: resolvedCvLink,        // ← stored as cv_link
+        attachmentPath: resolvedCvLink, // ← also stored as attachmentPath for read compat
         allowCVShare: allowCVShare || false,
         linkedin_url: linkedin_url || '',
         personal_statement: personal_statement || '',
@@ -132,7 +124,7 @@ export async function POST(request: Request) {
         createdAt: new Date().toISOString()
       };
 
-      console.log('[API-USERS] Creating mentee with attachmentPath:', attachmentPath || 'NONE');
+      console.log('[API-USERS] Creating mentee with cv_link:', resolvedCvLink || 'NONE');
 
       const { resource: createdMentee } = await menteeContainer.items.create(newMentee);
 

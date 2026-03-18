@@ -25,7 +25,8 @@ export async function POST(request: NextRequest) {
       mentee_institution,
       linkedin,
       github,
-      attachmentPath,
+      cv_link,           // ← primary field name
+      attachmentPath,    // ← legacy fallback (keep accepting both)
       allowCVShare,
       linkedin_url,
       personal_statement,
@@ -52,6 +53,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 });
     }
 
+    // Resolve cv_link — accept either field name from the frontend
+    const resolvedCvLink = cv_link || attachmentPath || '';
+
     // Select container based on role
     const containerName = role === 'mentor' 
       ? process.env.COSMOS_DB_CONTAINER_ID! 
@@ -77,7 +81,7 @@ export async function POST(request: NextRequest) {
     // Add role-specific fields
     const document = role === 'mentor' ? {
       ...baseDocument,
-      mentorUID: signupId,  // Use signupId as mentorUID for partition key
+      mentorUID: signupId,
       mentor_name: mentor_name || '',
       phone_number: phone_number || '',
       current_institution: current_institution || '',
@@ -94,13 +98,14 @@ export async function POST(request: NextRequest) {
       github: github || ''
     } : {
       ...baseDocument,
-      menteeUID: signupId,  // Use signupId as menteeUID for partition key
+      menteeUID: signupId,
       mentee_age: mentee_age || '',
       mentee_occupation: mentee_occupation || '',
       mentee_institution: mentee_institution || '',
       linkedin: linkedin || '',
       github: github || '',
-      attachmentPath: attachmentPath || '',
+      cv_link: resolvedCvLink,        // ← stored as cv_link
+      attachmentPath: resolvedCvLink, // ← also stored as attachmentPath for legacy compat
       allowCVShare: allowCVShare || false,
       linkedin_url: linkedin_url || '',
       personal_statement: personal_statement || ''
@@ -111,7 +116,7 @@ export async function POST(request: NextRequest) {
       email: document.email,
       role: document.role,
       containerName,
-      attachmentPath: role === 'mentee' ? (attachmentPath || 'NOT PROVIDED') : 'N/A'
+      cv_link: role === 'mentee' ? resolvedCvLink || 'NOT PROVIDED' : 'N/A'
     });
 
     const { resource: created } = await container.items.create(document);
@@ -133,7 +138,7 @@ export async function POST(request: NextRequest) {
       success: true,
       signupId,
       message: 'Code sent',
-      debug: { containerName, role } // For debugging
+      debug: { containerName, role }
     });
 
   } catch (err: any) {
