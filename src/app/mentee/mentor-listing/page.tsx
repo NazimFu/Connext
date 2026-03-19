@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { type Mentor } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Search, X, Loader2, Eye, Filter, Heart, Users, MessageCircle } from 'lucide-react';
+import { Search, X, Loader2, Eye, Heart, Users, MessageCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -382,6 +382,7 @@ export default function MentorsPage() {
   const [requestedMentors, setRequestedMentors] = useState<string[]>([]);
   const [showFavorites, setShowFavorites] = useState(false);
   const [showRequested, setShowRequested] = useState(false);
+  const [activeFilterTab, setActiveFilterTab] = useState<'specialization' | 'availability' | 'institution'>('specialization');
 
   useEffect(() => {
     const fetchMentors = async () => {
@@ -625,96 +626,140 @@ export default function MentorsPage() {
                   </Button>
                 </div>
 
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Filter className="h-4 w-4 text-gray-700" />
-                    <h2 className="text-sm font-semibold text-gray-900">Filter by Specialization</h2>
+                <div className="pt-1">
+                  <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-2 mb-3">
+                    <span className="text-sm font-semibold text-gray-900 shrink-0">Filter By:</span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={activeFilterTab === 'institution' ? 'default' : 'outline'}
+                        onClick={() => setActiveFilterTab('institution')}
+                        className={activeFilterTab === 'institution' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white h-8' : 'h-8 border-purple-300 text-purple-700 hover:bg-purple-50'}
+                      >
+                        Institution
+                        {selectedInstitutions.length > 0 && (
+                          <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-semibold">
+                            {selectedInstitutions.length}
+                          </span>
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={activeFilterTab === 'specialization' ? 'default' : 'outline'}
+                        onClick={() => setActiveFilterTab('specialization')}
+                        className={activeFilterTab === 'specialization' ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white h-8' : 'h-8 border-blue-300 text-blue-700 hover:bg-blue-50'}
+                      >
+                        Specialization
+                        {selectedFilters.length > 0 && (
+                          <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-semibold">
+                            {selectedFilters.length}
+                          </span>
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={activeFilterTab === 'availability' ? 'default' : 'outline'}
+                        onClick={() => setActiveFilterTab('availability')}
+                        className={activeFilterTab === 'availability' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white h-8' : 'h-8 border-green-300 text-green-700 hover:bg-green-50'}
+                      >
+                        Availability
+                        {selectedDays.length > 0 && (
+                          <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-semibold">
+                            {selectedDays.length}
+                          </span>
+                        )}
+                      </Button>
+                    </div>
                     {(selectedFilters.length > 0 || selectedDays.length > 0 || selectedInstitutions.length > 0 || searchQuery || showFavorites || showRequested) && (
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={clearAllFilters}
-                        className="ml-auto text-xs text-gray-700 hover:text-gray-800 hover:bg-gray-100 h-7"
+                        className="md:ml-auto text-xs text-gray-700 hover:text-gray-800 hover:bg-gray-100 h-7"
                       >
                         Clear All
                       </Button>
                     )}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {availableFilters.map((filter) => (
-                      <Badge
-                        key={filter}
-                        onClick={() => toggleFilter(filter)}
-                        className={`cursor-pointer transition-all text-xs ${
-                          selectedFilters.includes(filter)
-                            ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700'
-                            : 'bg-gray-100 text-gray-800 border-gray-300 hover:bg-gray-200'
-                        }`}
-                      >
-                        {filter}
-                        {selectedFilters.includes(filter) && <X className="ml-1 h-3 w-3" />}
-                      </Badge>
-                    ))}
-                  </div>
-                  {selectedFilters.length > 0 && (
-                    <div className="mt-3 text-xs text-gray-600">
-                      Showing mentors with: <span className="font-semibold text-gray-700">{selectedFilters.join(', ')}</span>
+
+                  {activeFilterTab === 'specialization' && (
+                    <div>
+                      <div className="flex flex-wrap gap-2">
+                        {availableFilters.map((filter) => (
+                          <Badge
+                            key={filter}
+                            onClick={() => toggleFilter(filter)}
+                            className={`cursor-pointer transition-all text-xs ${
+                              selectedFilters.includes(filter)
+                                ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700'
+                                : 'bg-gray-100 text-gray-800 border-gray-300 hover:bg-gray-200'
+                            }`}
+                          >
+                            {filter}
+                            {selectedFilters.includes(filter) && <X className="ml-1 h-3 w-3" />}
+                          </Badge>
+                        ))}
+                      </div>
+                      {selectedFilters.length > 0 && (
+                        <div className="mt-3 text-xs text-gray-600">
+                          Showing mentors with: <span className="font-semibold text-gray-700">{selectedFilters.join(', ')}</span>
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
 
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Filter className="h-4 w-4 text-gray-700" />
-                    <h2 className="text-sm font-semibold text-gray-900">Filter by Availability</h2>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {availableDays.map((day) => (
-                      <Badge
-                        key={day}
-                        onClick={() => toggleDay(day)}
-                        className={`cursor-pointer transition-all text-xs ${
-                          selectedDays.includes(day)
-                            ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700'
-                            : 'bg-green-50 text-green-800 border-green-300 hover:bg-green-100'
-                        }`}
-                      >
-                        {day}
-                        {selectedDays.includes(day) && <X className="ml-1 h-3 w-3" />}
-                      </Badge>
-                    ))}
-                  </div>
-                  {selectedDays.length > 0 && (
-                    <div className="mt-3 text-xs text-gray-600">
-                      Available on: <span className="font-semibold text-gray-700">{selectedDays.join(', ')}</span>
+                  {activeFilterTab === 'availability' && (
+                    <div>
+                      <div className="flex flex-wrap gap-2">
+                        {availableDays.map((day) => (
+                          <Badge
+                            key={day}
+                            onClick={() => toggleDay(day)}
+                            className={`cursor-pointer transition-all text-xs ${
+                              selectedDays.includes(day)
+                                ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700'
+                                : 'bg-green-50 text-green-800 border-green-300 hover:bg-green-100'
+                            }`}
+                          >
+                            {day}
+                            {selectedDays.includes(day) && <X className="ml-1 h-3 w-3" />}
+                          </Badge>
+                        ))}
+                      </div>
+                      {selectedDays.length > 0 && (
+                        <div className="mt-3 text-xs text-gray-600">
+                          Available on: <span className="font-semibold text-gray-700">{selectedDays.join(', ')}</span>
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
 
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Filter className="h-4 w-4 text-gray-700" />
-                    <h2 className="text-sm font-semibold text-gray-900">Filter by Institution</h2>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {availableInstitutions.map((institution) => (
-                      <Badge
-                        key={institution}
-                        onClick={() => toggleInstitution(institution)}
-                        className={`cursor-pointer transition-all text-xs ${
-                          selectedInstitutions.includes(institution)
-                            ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white hover:from-purple-600 hover:to-purple-700'
-                            : 'bg-purple-50 text-purple-800 border-purple-300 hover:bg-purple-100'
-                        }`}
-                      >
-                        {institution}
-                        {selectedInstitutions.includes(institution) && <X className="ml-1 h-3 w-3" />}
-                      </Badge>
-                    ))}
-                  </div>
-                  {selectedInstitutions.length > 0 && (
-                    <div className="mt-3 text-xs text-gray-600">
-                      From institutions: <span className="font-semibold text-gray-700">{selectedInstitutions.join(', ')}</span>
+                  {activeFilterTab === 'institution' && (
+                    <div>
+                      <div className="flex flex-wrap gap-2">
+                        {availableInstitutions.map((institution) => (
+                          <Badge
+                            key={institution}
+                            onClick={() => toggleInstitution(institution)}
+                            className={`cursor-pointer transition-all text-xs ${
+                              selectedInstitutions.includes(institution)
+                                ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white hover:from-purple-600 hover:to-purple-700'
+                                : 'bg-purple-50 text-purple-800 border-purple-300 hover:bg-purple-100'
+                            }`}
+                          >
+                            {institution}
+                            {selectedInstitutions.includes(institution) && <X className="ml-1 h-3 w-3" />}
+                          </Badge>
+                        ))}
+                      </div>
+                      {selectedInstitutions.length > 0 && (
+                        <div className="mt-3 text-xs text-gray-600">
+                          From institutions: <span className="font-semibold text-gray-700">{selectedInstitutions.join(', ')}</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

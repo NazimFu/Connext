@@ -6,7 +6,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/componen
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Search, X, Loader2, Eye, Filter } from 'lucide-react';
+import { Search, X, Loader2, Eye, Heart, MessageCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -39,7 +39,17 @@ interface Mentor {
   role?: string;
 }
 
-function MentorCard({ mentor }: { mentor: Mentor }) {
+function MentorCard({
+  mentor,
+  isFavorited,
+  onToggleFavorite,
+  showRequestedBadge
+}: {
+  mentor: Mentor;
+  isFavorited: boolean;
+  onToggleFavorite: (mentorUID: string) => void;
+  showRequestedBadge?: boolean;
+}) {
   const router = useRouter();
   const [isFlipped, setIsFlipped] = useState(false);
 
@@ -51,6 +61,11 @@ function MentorCard({ mentor }: { mentor: Mentor }) {
     e.stopPropagation();
     // Route to /[id] instead of /mentor/mentor-listing/[id]
     router.push(`/mentor/mentor-listing/${mentor.id}`);
+  };
+
+  const handleToggleFavorite = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleFavorite(mentor.mentorUID);
   };
 
   // Get available days from available_slots
@@ -93,6 +108,29 @@ function MentorCard({ mentor }: { mentor: Mentor }) {
           transition={{ duration: 0.6 }}
         >
           <Card className="flex flex-col h-full transition-all hover:shadow-lg border-l-4 border-l-yellow-400 hover:border-l-amber-500 group overflow-visible">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleToggleFavorite}
+              className="absolute top-3 right-3 z-10 hover:bg-red-100/80 transition-all rounded-full"
+            >
+              <Heart
+                className={`h-5 w-5 transition-all ${
+                  isFavorited
+                    ? 'fill-red-500 text-red-500'
+                    : 'text-gray-400 hover:text-red-500'
+                }`}
+              />
+            </Button>
+
+            {showRequestedBadge && (
+              <div className="absolute top-3 left-3 z-10">
+                <Badge className="bg-blue-100 text-blue-700 border-0 text-xs font-medium">
+                  Previously Met
+                </Badge>
+              </div>
+            )}
+
             <CardHeader className="items-center text-center pb-3">
               <div className="relative mb-3">
                 <Avatar className="h-20 w-20 ring-4 ring-yellow-100 transition-all group-hover:ring-yellow-200 group-hover:scale-105">
@@ -353,6 +391,11 @@ export default function MentorsPage() {
   const [availableFilters, setAvailableFilters] = useState<string[]>([]);
   const [availableDays, setAvailableDays] = useState<string[]>([]);
   const [availableInstitutions, setAvailableInstitutions] = useState<string[]>([]);
+  const [favoriteMentors, setFavoriteMentors] = useState<string[]>([]);
+  const [requestedMentors, setRequestedMentors] = useState<string[]>([]);
+  const [showFavorites, setShowFavorites] = useState(false);
+  const [showRequested, setShowRequested] = useState(false);
+  const [activeFilterTab, setActiveFilterTab] = useState<'specialization' | 'availability' | 'institution'>('specialization');
 
   useEffect(() => {
     const fetchMentors = async () => {
@@ -423,6 +466,48 @@ export default function MentorsPage() {
     fetchMentors();
   }, [user?.id, toast]);
 
+  useEffect(() => {
+    const fetchFavorites = async () => {
+      if (!user?.id) return;
+
+      try {
+        await fetch('/api/mentee/sync-requested', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.id }),
+        });
+
+        const response = await fetch(`/api/mentee/favorites?userId=${user.id}`);
+        if (response.ok) {
+          const data = await response.json();
+          setFavoriteMentors(data.favorite_mentors || []);
+          setRequestedMentors(data.requested_mentors || []);
+        }
+      } catch (error) {
+        console.error('Error fetching favorites:', error);
+      }
+    };
+
+    fetchFavorites();
+  }, [user?.id]);
+
+  const toggleFavorite = async (mentorUID: string) => {
+    if (!user?.id) return;
+    try {
+      const response = await fetch('/api/mentee/favorites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, mentorUID }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setFavoriteMentors(data.favorite_mentors);
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+    }
+  };
+
   const toggleFilter = (filter: string) => {
     setSelectedFilters(prev => 
       prev.includes(filter) 
@@ -452,6 +537,8 @@ export default function MentorsPage() {
     setSelectedDays([]);
     setSelectedInstitutions([]);
     setSearchQuery('');
+    setShowFavorites(false);
+    setShowRequested(false);
   };
 
   const filteredMentors = mentors.filter((mentor) => {
@@ -492,7 +579,10 @@ export default function MentorsPage() {
       return false;
     });
 
-    return matchesSearch && matchesFilters && matchesDays && matchesInstitutions;
+    const matchesFavorites = !showFavorites || favoriteMentors.includes(mentor.mentorUID);
+    const matchesRequested = !showRequested || requestedMentors.includes(mentor.mentorUID);
+
+    return matchesSearch && matchesFilters && matchesDays && matchesInstitutions && matchesFavorites && matchesRequested;
   });
 
   return (
@@ -535,110 +625,190 @@ export default function MentorsPage() {
 
             {/* Filter Section */}
             <div className="space-y-4">
-              {/* Specialization Filters */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Filter className="h-4 w-4 text-yellow-600" />
-                  <h2 className="text-sm font-semibold text-gray-900">Filter by Specialization</h2>
-                  {(selectedFilters.length > 0 || selectedDays.length > 0 || selectedInstitutions.length > 0 || searchQuery) && (
+              <div className="flex flex-wrap gap-2 pb-3 border-b border-yellow-100">
+                <Button
+                  variant={showFavorites ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setShowFavorites(!showFavorites);
+                    setShowRequested(false);
+                  }}
+                  className={`text-xs ${
+                    showFavorites
+                      ? 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white'
+                      : 'border-yellow-300 text-yellow-700 hover:bg-yellow-50'
+                  }`}
+                >
+                  <Heart className={`h-3 w-3 mr-1.5 ${showFavorites ? 'fill-white' : ''}`} />
+                  Favorited Mentors {favoriteMentors.length > 0 && `(${favoriteMentors.length})`}
+                </Button>
+                <Button
+                  variant={showRequested ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setShowRequested(!showRequested);
+                    setShowFavorites(false);
+                  }}
+                  className={`text-xs ${
+                    showRequested
+                      ? 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white'
+                      : 'border-yellow-300 text-yellow-700 hover:bg-yellow-50'
+                  }`}
+                >
+                  <MessageCircle className="h-3 w-3 mr-1.5" />
+                  Previously Met {requestedMentors.length > 0 && `(${requestedMentors.length})`}
+                </Button>
+              </div>
+
+              <div className="pt-1">
+                <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-2 mb-3">
+                  <span className="text-sm font-semibold text-gray-900 shrink-0">Filter By:</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={activeFilterTab === 'institution' ? 'default' : 'outline'}
+                      onClick={() => setActiveFilterTab('institution')}
+                      className={activeFilterTab === 'institution' ? 'bg-gradient-to-r from-blue-400 to-indigo-500 text-white h-8' : 'h-8 border-blue-300 text-blue-700 hover:bg-blue-50'}
+                    >
+                      Institution
+                      {selectedInstitutions.length > 0 && (
+                        <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-semibold">
+                          {selectedInstitutions.length}
+                        </span>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={activeFilterTab === 'specialization' ? 'default' : 'outline'}
+                      onClick={() => setActiveFilterTab('specialization')}
+                      className={activeFilterTab === 'specialization' ? 'bg-gradient-to-r from-yellow-400 to-amber-500 text-white h-8' : 'h-8 border-yellow-300 text-yellow-700 hover:bg-yellow-50'}
+                    >
+                      Specialization
+                      {selectedFilters.length > 0 && (
+                        <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-semibold">
+                          {selectedFilters.length}
+                        </span>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={activeFilterTab === 'availability' ? 'default' : 'outline'}
+                      onClick={() => setActiveFilterTab('availability')}
+                      className={activeFilterTab === 'availability' ? 'bg-gradient-to-r from-green-400 to-emerald-500 text-white h-8' : 'h-8 border-green-300 text-green-700 hover:bg-green-50'}
+                    >
+                      Availability
+                      {selectedDays.length > 0 && (
+                        <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-semibold">
+                          {selectedDays.length}
+                        </span>
+                      )}
+                    </Button>
+                  </div>
+                  {(selectedFilters.length > 0 || selectedDays.length > 0 || selectedInstitutions.length > 0 || searchQuery || showFavorites || showRequested) && (
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={clearAllFilters}
-                      className="ml-auto text-xs text-yellow-700 hover:text-yellow-800 hover:bg-yellow-50 h-7"
+                      className="md:ml-auto text-xs text-yellow-700 hover:text-yellow-800 hover:bg-yellow-50 h-7"
                     >
                       Clear All
                     </Button>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {availableFilters.map((filter) => (
-                    <Badge
-                      key={filter}
-                      onClick={() => toggleFilter(filter)}
-                      className={`cursor-pointer transition-all text-xs ${
-                        selectedFilters.includes(filter)
-                          ? 'bg-gradient-to-r from-yellow-400 to-amber-500 text-white hover:from-yellow-500 hover:to-amber-600'
-                          : 'bg-yellow-50 text-yellow-800 border-yellow-200 hover:bg-yellow-100'
-                      }`}
-                    >
-                      {filter}
-                      {selectedFilters.includes(filter) && (
-                        <X className="ml-1 h-3 w-3" />
-                      )}
-                    </Badge>
-                  ))}
-                </div>
-                {selectedFilters.length > 0 && (
-                  <div className="mt-3 text-xs text-gray-600">
-                    Showing mentors with: <span className="font-semibold text-yellow-700">{selectedFilters.join(', ')}</span>
-                  </div>
-                )}
-              </div>
 
-              {/* Day Availability Filters */}
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Filter className="h-4 w-4 text-green-600" />
-                  <h2 className="text-sm font-semibold text-gray-900">Filter by Availability</h2>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {availableDays.map((day) => (
-                    <Badge
-                      key={day}
-                      onClick={() => toggleDay(day)}
-                      className={`cursor-pointer transition-all text-xs ${
-                        selectedDays.includes(day)
-                          ? 'bg-gradient-to-r from-green-400 to-emerald-500 text-white hover:from-green-500 hover:to-emerald-600'
-                          : 'bg-green-50 text-green-800 border-green-200 hover:bg-green-100'
-                      }`}
-                    >
-                      {day}
-                      {selectedDays.includes(day) && (
-                        <X className="ml-1 h-3 w-3" />
-                      )}
-                    </Badge>
-                  ))}
-                </div>
-                {selectedDays.length > 0 && (
-                  <div className="mt-3 text-xs text-gray-600">
-                    Available on: <span className="font-semibold text-green-700">{selectedDays.join(', ')}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Institution Filters */}
-              {availableInstitutions.length > 0 && (
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Filter className="h-4 w-4 text-blue-600" />
-                    <h2 className="text-sm font-semibold text-gray-900">Filter by Institution</h2>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {availableInstitutions.map((institution) => (
-                      <Badge
-                        key={institution}
-                        onClick={() => toggleInstitution(institution)}
-                        className={`cursor-pointer transition-all text-xs ${
-                          selectedInstitutions.includes(institution)
-                            ? 'bg-gradient-to-r from-blue-400 to-indigo-500 text-white hover:from-blue-500 hover:to-indigo-600'
-                            : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
-                        }`}
-                      >
-                        {institution}
-                        {selectedInstitutions.includes(institution) && (
-                          <X className="ml-1 h-3 w-3" />
-                        )}
-                      </Badge>
-                    ))}
-                  </div>
-                  {selectedInstitutions.length > 0 && (
-                    <div className="mt-3 text-xs text-gray-600">
-                      Affiliated with: <span className="font-semibold text-blue-700">{selectedInstitutions.join(', ')}</span>
+                {activeFilterTab === 'specialization' && (
+                  <div>
+                    <div className="flex flex-wrap gap-2">
+                      {availableFilters.map((filter) => (
+                        <Badge
+                          key={filter}
+                          onClick={() => toggleFilter(filter)}
+                          className={`cursor-pointer transition-all text-xs ${
+                            selectedFilters.includes(filter)
+                              ? 'bg-gradient-to-r from-yellow-400 to-amber-500 text-white hover:from-yellow-500 hover:to-amber-600'
+                              : 'bg-yellow-50 text-yellow-800 border-yellow-200 hover:bg-yellow-100'
+                          }`}
+                        >
+                          {filter}
+                          {selectedFilters.includes(filter) && (
+                            <X className="ml-1 h-3 w-3" />
+                          )}
+                        </Badge>
+                      ))}
                     </div>
-                  )}
-                </div>
-              )}
+                    {selectedFilters.length > 0 && (
+                      <div className="mt-3 text-xs text-gray-600">
+                        Showing mentors with: <span className="font-semibold text-yellow-700">{selectedFilters.join(', ')}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeFilterTab === 'availability' && (
+                  <div>
+                    <div className="flex flex-wrap gap-2">
+                      {availableDays.map((day) => (
+                        <Badge
+                          key={day}
+                          onClick={() => toggleDay(day)}
+                          className={`cursor-pointer transition-all text-xs ${
+                            selectedDays.includes(day)
+                              ? 'bg-gradient-to-r from-green-400 to-emerald-500 text-white hover:from-green-500 hover:to-emerald-600'
+                              : 'bg-green-50 text-green-800 border-green-200 hover:bg-green-100'
+                          }`}
+                        >
+                          {day}
+                          {selectedDays.includes(day) && (
+                            <X className="ml-1 h-3 w-3" />
+                          )}
+                        </Badge>
+                      ))}
+                    </div>
+                    {selectedDays.length > 0 && (
+                      <div className="mt-3 text-xs text-gray-600">
+                        Available on: <span className="font-semibold text-green-700">{selectedDays.join(', ')}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeFilterTab === 'institution' && (
+                  <div>
+                    {availableInstitutions.length > 0 ? (
+                      <>
+                        <div className="flex flex-wrap gap-2">
+                          {availableInstitutions.map((institution) => (
+                            <Badge
+                              key={institution}
+                              onClick={() => toggleInstitution(institution)}
+                              className={`cursor-pointer transition-all text-xs ${
+                                selectedInstitutions.includes(institution)
+                                  ? 'bg-gradient-to-r from-blue-400 to-indigo-500 text-white hover:from-blue-500 hover:to-indigo-600'
+                                  : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
+                              }`}
+                            >
+                              {institution}
+                              {selectedInstitutions.includes(institution) && (
+                                <X className="ml-1 h-3 w-3" />
+                              )}
+                            </Badge>
+                          ))}
+                        </div>
+                        {selectedInstitutions.length > 0 && (
+                          <div className="mt-3 text-xs text-gray-600">
+                            Affiliated with: <span className="font-semibold text-blue-700">{selectedInstitutions.join(', ')}</span>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-500">No institution filters available right now.</p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -673,6 +843,9 @@ export default function MentorsPage() {
                     <MentorCard 
                       key={mentor.id} 
                       mentor={mentor}
+                      isFavorited={favoriteMentors.includes(mentor.mentorUID)}
+                      onToggleFavorite={toggleFavorite}
+                      showRequestedBadge={requestedMentors.includes(mentor.mentorUID)}
                     />
                   ))}
                 </AnimatePresence>
