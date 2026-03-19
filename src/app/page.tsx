@@ -99,11 +99,11 @@ export default function Home() {
       className="flex flex-col min-h-screen overflow-x-hidden text-foreground"
       style={{
         background:
-          'linear-gradient(180deg, hsl(48 100% 96%) 0%, hsl(0 0% 100%) 30%, hsl(48 100% 98%) 60%, hsl(0 0% 100%) 80%, hsl(48 100% 97%) 100%)',
+          'linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(50 100% 97%) 10%, hsl(49 100% 94%) 38%, hsl(47 100% 89%) 100%)',
       }}
     >
       {/* Hero Section */}
-      <section id="home" className="w-full pt-36 md:pt-48 lg:pt-56 pb-24 md:pb-36 lg:pb-40">
+      <section id="home" className="w-full pt-32 md:pt-48 lg:pt-56 pb-16 md:pb-28 lg:pb-32">
         <div className="container mx-auto px-4 md:px-6">
           <div className="grid lg:grid-cols-[1.5fr,1fr] gap-10 lg:gap-16 items-start">
             <div>
@@ -120,12 +120,53 @@ export default function Home() {
                 <Button
                   asChild
                   size="lg"
-                  className="bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-gray-900 font-semibold shadow-lg hover:shadow-yellow-600/40 transition-all"
+                  className="bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-amber-700 hover:text-white text-gray-900 font-semibold shadow-lg hover:shadow-yellow-700/40 transition-all"
                 >
                   <Link href="/signup">Get Started</Link>
                 </Button>
               </div>
             </div>
+          </div>
+
+          <div className="mt-12 md:mt-16 lg:mt-20">
+            <h3 className="text-center text-xs md:text-sm uppercase tracking-wider font-semibold mb-6">
+              Our Partner Institutions
+            </h3>
+
+            {loadingInstitutions ? (
+              <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 gap-2 md:gap-3 max-w-5xl mx-auto">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="h-8 md:h-10 rounded-lg bg-muted/50 animate-pulse" />
+                ))}
+              </div>
+            ) : institutionPhotos.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p className="text-sm">No institution photos available yet</p>
+                <p className="text-xs mt-1">Mentors can add institution logos in their profile settings</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-5 sm:grid-cols-7 md:grid-cols-9 gap-2 md:gap-3 max-w-5xl mx-auto">
+                {institutionPhotos.map((src, idx) => (
+                  <div
+                    key={`institution-${idx}`}
+                    className="relative group rounded-md border border-gray-200 hover:border-yellow-400 transition-all overflow-hidden bg-white shadow-sm hover:shadow-md"
+                  >
+                    <div className="aspect-[3/2] flex items-center justify-center p-1">
+                      <img
+                        src={src}
+                        alt={`Partner Institution ${idx + 1}`}
+                        className="max-h-full max-w-full object-contain"
+                        loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.src =
+                            'https://placehold.co/120x60/e5e7eb/6b7280?text=Logo';
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -249,50 +290,6 @@ export default function Home() {
               </Carousel>
             )}
           </div>
-        </div>
-      </section>
-
-      {/* Partner Institutions */}
-      <section className="w-full py-8 md:py-12">
-        <div className="container mx-auto px-4 md:px-6">
-          <h3 className="text-center text-sm md:text-base uppercase tracking-wider font-semibold mb-6">
-            Our Partner Institutions
-          </h3>
-
-          {loadingInstitutions ? (
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 md:gap-4 max-w-5xl mx-auto">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-12 md:h-14 rounded-lg bg-muted/50 animate-pulse" />
-              ))}
-            </div>
-          ) : institutionPhotos.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <p className="text-sm">No institution photos available yet</p>
-              <p className="text-xs mt-1">Mentors can add institution logos in their profile settings</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 md:gap-4 max-w-5xl mx-auto">
-              {institutionPhotos.map((src, idx) => (
-                <div
-                  key={`institution-${idx}`}
-                  className="relative group rounded-md border border-gray-200 hover:border-yellow-400 transition-all overflow-hidden bg-white shadow-sm hover:shadow-md"
-                >
-                  <div className="aspect-[3/2] flex items-center justify-center p-2">
-                    <img
-                      src={src}
-                      alt={`Partner Institution ${idx + 1}`}
-                      className="max-h-full max-w-full object-contain"
-                      loading="lazy"
-                      onError={(e) => {
-                        e.currentTarget.src =
-                          'https://placehold.co/120x60/e5e7eb/6b7280?text=Logo';
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </section>
 

@@ -942,11 +942,11 @@ export default function MentorTasksPage() {
       case 'pending_request':
         return 'Pending';
       case 'meeting':
-        return 'Upcoming';
+        return 'Upcoming Meetings';
       case 'in_progress_meeting':
         return 'Meeting In Progress';
       case 'past_meeting':
-        return 'Finished';
+        return 'Completed Meetings';
       case 'feedback':
         return 'Feedback Due';
       default:
@@ -1012,9 +1012,9 @@ export default function MentorTasksPage() {
           >
             {[
               { key: 'pending', label: 'Pending Requests', value: pendingCount, Icon: Clock, accent: 'bg-yellow-400' },
-              { key: 'upcoming', label: 'Upcoming', value: upcomingCount, Icon: Video, accent: 'bg-blue-400' },
+              { key: 'upcoming', label: 'Upcoming Meetings', value: upcomingCount, Icon: Video, accent: 'bg-blue-400' },
               { key: 'feedback', label: 'Feedback Due', value: feedbackCount, Icon: MessageSquare, accent: 'bg-purple-400' },
-              { key: 'completed', label: 'Completed', value: completedCount, Icon: CheckSquare, accent: 'bg-green-400' },
+              { key: 'completed', label: 'Completed Meetings', value: completedCount, Icon: CheckSquare, accent: 'bg-green-400' },
             ].map(({ key, label, value, Icon, accent }) => (
               <Card key={key} className="flex items-center bg-white border border-gray-400 rounded-lg shadow-sm overflow-hidden">
                 <div className={`${accent} w-1 h-full hidden sm:block`} />

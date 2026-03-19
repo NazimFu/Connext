@@ -40,7 +40,7 @@ export default function Header() {
       e.preventDefault();
       const element = document.getElementById(scrollTo);
       if (element) {
-        const headerOffset = 100; // Account for fixed header
+        const headerOffset = 100; // Account for sticky header
         const elementPosition = element.getBoundingClientRect().top;
         const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
 
@@ -65,28 +65,15 @@ export default function Header() {
   return (
     <header
       className={cn(
-        'fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-6xl transition-all duration-400',
+        'absolute top-4 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-6xl transition-all duration-400',
         elevated ? 'scale-[1.002]' : 'scale-100'
       )}
     >
       <div
         className={cn(
-          'relative px-5 md:px-8 h-16 flex items-center justify-between rounded-3xl',
-          'border border-white/30',
-          'bg-[linear-gradient(135deg,rgba(255,255,255,0.85)_0%,rgba(247,254,216,0.70)_40%,rgba(255,255,255,0.85)_100%)]',
-          'backdrop-blur-xl',
-          'shadow-[0_8px_24px_-6px_rgba(0,0,0,0.15),0_2px_6px_-1px_rgba(0,0,0,0.08)]',
-          elevated && 'shadow-[0_10px_28px_-6px_rgba(0,0,0,0.2),0_3px_10px_-1px_rgba(0,0,0,0.12)]',
-          'ring-1 ring-yellow-100/40'
+          'relative px-2 md:px-4 h-16 flex items-center justify-between rounded-3xl'
         )}
       >
-        {/* Gloss highlight */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl">
-          <div className="absolute -top-8 left-8 h-20 w-32 rotate-12 bg-white/35 blur-xl rounded-full" />
-          <div className="absolute -bottom-10 right-10 h-28 w-40 bg-yellow-200/20 blur-2xl rounded-full" />
-          <div className="absolute inset-0 rounded-3xl ring-1 ring-white/40" />
-        </div>
-
         {/* Brand */}
         <Link
           href="/"
@@ -112,9 +99,9 @@ export default function Header() {
                 href={item.href}
                 onClick={(e) => handleNavClick(e, item.scrollTo)}
                 className={cn(
-                  'relative text-sm font-medium transition-colors',
+                  'relative text-sm font-medium transition-all duration-300',
                   'px-2 py-1 rounded-lg',
-                  'text-gray-700 hover:text-gray-900',
+                  'text-gray-700 hover:text-yellow-700 hover:bg-yellow-200/40 hover:shadow-[0_0_18px_rgba(234,179,8,0.45)]',
                   active &&
                     'text-gray-900 after:absolute after:inset-x-0 after:-bottom-1 after:h-[2px] after:rounded-full after:bg-gradient-to-r after:from-yellow-400 after:to-amber-500'
                 )}
@@ -130,13 +117,13 @@ export default function Header() {
           <Button
             variant="ghost"
             asChild
-            className="rounded-xl hover:bg-yellow-50/80 text-gray-900 font-medium transition-all"
+            className="rounded-full border border-black/10 bg-transparent hover:bg-gradient-to-r hover:from-yellow-500 hover:to-amber-700 hover:text-white text-gray-900 font-medium transition-all"
           >
             <Link href="/login">Sign In</Link>
           </Button>
           <Button
             asChild
-            className="rounded-xl bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-black font-semibold shadow-md hover:shadow-lg hover:scale-[1.03] active:scale-[0.97] transition-all"
+            className="rounded-full border border-black/10 bg-white/30 hover:bg-gradient-to-r hover:from-yellow-500 hover:to-amber-700 hover:text-white text-gray-900 font-semibold shadow-sm hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all"
           >
             <Link href="/signup">Sign Up</Link>
           </Button>
@@ -192,13 +179,13 @@ export default function Header() {
               <Button
                 asChild
                 variant="ghost"
-                className="w-full rounded-xl bg-white/70 hover:bg-white text-gray-900 font-medium"
+                className="w-full rounded-xl bg-white/70 hover:bg-gradient-to-r hover:from-yellow-500 hover:to-amber-700 hover:text-white text-gray-900 font-medium"
               >
                 <Link href="/login">Sign In</Link>
               </Button>
               <Button
                 asChild
-                className="w-full rounded-xl bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-500 hover:to-amber-600 text-black font-semibold shadow-md hover:shadow-lg"
+                className="w-full rounded-xl bg-gradient-to-r from-yellow-400 to-amber-500 hover:from-yellow-500 hover:to-amber-700 hover:text-white text-black font-semibold shadow-md hover:shadow-lg"
               >
                 <Link href="/signup">Sign Up</Link>
               </Button>

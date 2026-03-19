@@ -591,14 +591,14 @@ export default function MenteeNoticesPage() {
   const getTaskLabel = (task: TaskItem): string => {
     switch (task.type) {
       case 'pending_request':
-        return 'Pending';
+        return 'Pending Requests';
       case 'meeting': {
         // Determine if meeting is upcoming or ongoing
-        if (!task.meetingDateTime) return 'Upcoming';
+        if (!task.meetingDateTime) return 'Upcoming Meetings';
         const meetingTime = new Date(task.meetingDateTime);
         const now = new Date();
         if (now < meetingTime) {
-          return 'Upcoming';
+          return 'Upcoming Meetings';
         } else {
           return 'Ongoing';
         }
@@ -606,7 +606,7 @@ export default function MenteeNoticesPage() {
       case 'feedback':
         return 'Feedback Due';
       case 'past_meeting':
-        return 'Completed';
+        return 'Completed Meetings';
       default:
         return 'Task';
     }
@@ -718,10 +718,10 @@ export default function MenteeNoticesPage() {
             className="grid grid-cols-1 sm:grid-cols-4 gap-4 flex-1"
           >
             {[
-              { key: 'pending', label: 'Pending', value: pendingCount, Icon: Clock, accent: 'bg-amber-400' },
-              { key: 'upcoming', label: 'Upcoming', value: upcomingCount, Icon: Video, accent: 'bg-green-400' },
+              { key: 'pending', label: 'Pending Requests', value: pendingCount, Icon: Clock, accent: 'bg-amber-400' },
+              { key: 'upcoming', label: 'Upcoming Meetings', value: upcomingCount, Icon: Video, accent: 'bg-green-400' },
               { key: 'feedback', label: 'Feedback Due', value: feedbackCount, Icon: AlertCircle, accent: 'bg-orange-400' },
-              { key: 'completed', label: 'Completed', value: completedCount, Icon: CheckSquare, accent: 'bg-blue-400' },
+              { key: 'completed', label: 'Completed Meetings', value: completedCount, Icon: CheckSquare, accent: 'bg-blue-400' },
             ].map(({ key, label, value, Icon, accent }) => (
               <Card key={key} className="flex items-center bg-white border border-gray-400 rounded-lg shadow-sm overflow-hidden">
                 <div className={`${accent} w-1 h-full hidden sm:block`} />

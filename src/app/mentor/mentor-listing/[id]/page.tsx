@@ -31,6 +31,13 @@ import {
 } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { getGoogleDriveImageUrl } from "@/lib/utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // Whitelisted fields to display (empty values will be filtered out)
 const ALLOWED_FIELDS = new Set([
@@ -412,11 +419,11 @@ export default function MentorDetailPage() {
 
   return (
     <div className="container mx-auto max-w-6xl px-6 py-16">
-      <div className="grid md:grid-cols-3 gap-10">
+      <div className="grid md:grid-cols-5 gap-10">
         {/* Mentor Card */}
-        <Card className="md:col-span-2 rounded-xl border border-gray-200 shadow-sm">
+        <Card className="md:col-span-3 rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <CardContent className="p-0">
-            <div className="h-20 bg-gradient-to-r from-gray-800 to-gray-900" />
+            <div className="h-20 bg-gradient-to-r from-gray-800 to-gray-900 rounded-t-xl" />
             <div className="-mt-14 px-6 pb-8 text-center">
               <Avatar className="mx-auto h-32 w-32 border-4 border-white shadow-sm">
                 <AvatarImage src={mentorData.image} />
@@ -464,11 +471,11 @@ export default function MentorDetailPage() {
                         title={photoObj.name}
                       >
                         <img
-                          src={photoObj.url}
+                          src={getGoogleDriveImageUrl(photoObj.url)}
                           alt={photoObj.name}
                           className="h-full w-full object-contain"
                           onError={(e) => {
-                            e.currentTarget.style.display = "none";
+                            e.currentTarget.src = "https://placehold.co/40x40/e5e7eb/6b7280?text=Logo";
                           }}
                         />
                         <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
@@ -477,9 +484,44 @@ export default function MentorDetailPage() {
                       </div>
                     ))}
                     {mentorData.logos.length > 3 && (
-                      <div className="h-12 w-12 bg-gray-50 border border-gray-200 rounded flex items-center justify-center text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-colors cursor-help" title={`${mentorData.logos.length - 3} more institutions`}>
-                        +{mentorData.logos.length - 3}
-                      </div>
+                      <TooltipProvider>
+                        <Tooltip delayDuration={200}>
+                          <TooltipTrigger asChild>
+                            <div className="h-12 w-12 bg-gray-50 border border-gray-200 rounded flex items-center justify-center text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-colors cursor-help">
+                              +{mentorData.logos.length - 3}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent
+                            side="top"
+                            align="center"
+                            sideOffset={8}
+                            className="bg-white border-gray-200 shadow-xl p-3 rounded-lg"
+                          >
+                            <p className="text-xs font-semibold text-gray-700 mb-2">
+                              Additional Institutions
+                            </p>
+                            <div className="grid grid-cols-2 gap-2.5 max-w-[240px]">
+                              {mentorData.logos.slice(3).map((photoObj, idx) => (
+                                <div key={`extra-institution-${idx}`} className="flex items-center gap-2">
+                                  <div className="w-8 h-8 bg-white rounded border border-gray-200 p-1 flex items-center justify-center">
+                                    <img
+                                      src={getGoogleDriveImageUrl(photoObj.url)}
+                                      alt={photoObj.name}
+                                      className="max-w-full max-h-full object-contain"
+                                      onError={(e) => {
+                                        e.currentTarget.src = "https://placehold.co/40x40/e5e7eb/6b7280?text=Logo";
+                                      }}
+                                    />
+                                  </div>
+                                  <p className="text-[11px] leading-tight text-gray-600 max-w-[78px] break-words">
+                                    {photoObj.name}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     )}
                   </div>
                 </div>
@@ -518,7 +560,7 @@ export default function MentorDetailPage() {
         </Card>
 
         {/* Scheduler */}
-        <Card className="md:col-span-1 rounded-xl border border-gray-200 shadow-sm">
+        <Card className="md:col-span-2 rounded-xl border border-gray-200 shadow-sm">
           <CardHeader className="border-b border-gray-100">
             <CardTitle className="text-xl font-semibold text-gray-900">
               Schedule a Meeting
@@ -623,12 +665,12 @@ export default function MentorDetailPage() {
 
               <div>
                 <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                  Reason for Meeting
+                  Leave a Message
                 </Label>
                 <Textarea
                   id="message"
-                  placeholder="What would you like to discuss?"
-                  rows={4}
+                  placeholder={`Share:\n- what you want to ask\n- your current status\n- any difficulties you are facing\n- etc.`}
+                  rows={6}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   className="rounded-lg border-gray-300 bg-gray-50 focus:bg-white"

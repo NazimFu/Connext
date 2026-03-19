@@ -310,12 +310,12 @@ export default function SchedulePage() {
                     htmlFor="message"
                     className="font-medium text-lg mb-2 block"
                   >
-                    3. Reason for Meeting
+                    3. Leave a Message
                   </Label>
                   <Textarea
                     id="message"
-                    placeholder="What would you like to discuss? e.g., resume review, career advice..."
-                    rows={4}
+                    placeholder={`Share:\n- what you want to ask\n- your current status\n- any difficulties you are facing\n- etc.`}
+                    rows={6}
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                   />

@@ -62,6 +62,25 @@ export default function MentorMenteesPage() {
 
       const meetings = await response.json();
       
+      const parseMeetingDateTime = (date: string, time: string): Date => {
+        const [year, month, day] = date.split('-').map(Number);
+
+        if (time.includes('AM') || time.includes('PM')) {
+          const [timePart, period] = time.split(' ');
+          const [rawHours, minutes] = timePart.split(':').map(Number);
+          const hours =
+            period === 'PM' && rawHours !== 12
+              ? rawHours + 12
+              : period === 'AM' && rawHours === 12
+              ? 0
+              : rawHours;
+          return new Date(year, month - 1, day, hours, minutes, 0, 0);
+        }
+
+        const [hours, minutes] = time.split(':').map(Number);
+        return new Date(year, month - 1, day, hours, minutes, 0, 0);
+      };
+
       // Group meetings by mentee and collect statistics
       const menteeMap = new Map<string, {
         info: any;
@@ -70,27 +89,41 @@ export default function MentorMenteesPage() {
 
       for (const meeting of meetings) {
         if (meeting.decision === 'accepted' && meeting.scheduled_status !== 'cancelled') {
-          const menteeUID = meeting.menteeUID;
-          
-          if (!menteeMap.has(menteeUID)) {
-            // Fetch mentee details
-            try {
-              const menteeResponse = await fetch(`/api/users/${menteeUID}`);
-              if (menteeResponse.ok) {
-                const menteeData = await menteeResponse.json();
-                menteeMap.set(menteeUID, {
-                  info: menteeData,
-                  meetings: []
-                });
+          const menteeKey =
+            meeting.menteeUID ||
+            meeting.mentee_email ||
+            `${meeting.mentee_name || 'Unknown'}-${meeting.meetingId}`;
+
+          if (!menteeMap.has(menteeKey)) {
+            // Always set a fallback profile so past mentees are still displayed
+            menteeMap.set(menteeKey, {
+              info: {
+                mentee_name: meeting.mentee_name,
+                name: meeting.mentee_name,
+                mentee_email: meeting.mentee_email,
+                email: meeting.mentee_email,
+              },
+              meetings: [],
+            });
+
+            // Enrich with user profile data when mentee UID is available
+            if (meeting.menteeUID) {
+              try {
+                const menteeResponse = await fetch(`/api/users/${meeting.menteeUID}`);
+                if (menteeResponse.ok) {
+                  const menteeData = await menteeResponse.json();
+                  menteeMap.set(menteeKey, {
+                    info: { ...menteeMap.get(menteeKey)!.info, ...menteeData },
+                    meetings: menteeMap.get(menteeKey)!.meetings,
+                  });
+                }
+              } catch (error) {
+                console.error('Error fetching mentee details:', error);
               }
-            } catch (error) {
-              console.error('Error fetching mentee details:', error);
             }
           }
 
-          if (menteeMap.has(menteeUID)) {
-            menteeMap.get(menteeUID)!.meetings.push(meeting);
-          }
+          menteeMap.get(menteeKey)!.meetings.push(meeting);
         }
       }
 
@@ -98,29 +131,29 @@ export default function MentorMenteesPage() {
       const now = new Date();
       const menteesData: MenteeInfo[] = [];
 
-      menteeMap.forEach((data, menteeUID) => {
+      menteeMap.forEach((data, menteeKey) => {
         const { info, meetings } = data;
         
         const completedMeetings = meetings.filter(m => {
-          const meetingDate = new Date(`${m.date}T${m.time}`);
+          const meetingDate = parseMeetingDateTime(m.date, m.time);
           return meetingDate < now;
         });
 
         const upcomingMeetings = meetings.filter(m => {
-          const meetingDate = new Date(`${m.date}T${m.time}`);
+          const meetingDate = parseMeetingDateTime(m.date, m.time);
           return meetingDate >= now;
         });
 
         const lastMeeting = completedMeetings.length > 0
           ? completedMeetings.sort((a, b) => {
-              const dateA = new Date(`${a.date}T${a.time}`);
-              const dateB = new Date(`${b.date}T${b.time}`);
+              const dateA = parseMeetingDateTime(a.date, a.time);
+              const dateB = parseMeetingDateTime(b.date, b.time);
               return dateB.getTime() - dateA.getTime();
             })[0]
           : null;
 
         menteesData.push({
-          menteeUID,
+          menteeUID: String(info.menteeUID || menteeKey),
           mentee_name: info.mentee_name || info.name,
           mentee_email: info.mentee_email || info.email,
           mentee_institution: info.mentee_institution,
