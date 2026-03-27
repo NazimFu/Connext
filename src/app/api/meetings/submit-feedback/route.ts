@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { database } from "@/lib/cosmos";
+import { getTokenCycleEvaluateAtIso, parseMeetingDateTime } from '@/lib/token-cycle';
 
 export async function POST(req: NextRequest) {
   try {
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if feedback was already submitted to prevent duplicate replenishments
+    // Check if feedback was already submitted to prevent duplicates.
     if (user.scheduling[scheduleIndex].feedbackFormSent === true) {
       return NextResponse.json(
         { 
@@ -73,23 +74,72 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const meeting = user.scheduling[scheduleIndex];
+    if (meeting.decision !== 'accepted') {
+      return NextResponse.json(
+        { message: 'Feedback can only be submitted for accepted meetings.' },
+        { status: 400 }
+      );
+    }
+
+    const meetingDateTime = parseMeetingDateTime(meeting.date, meeting.time);
+    if (!meetingDateTime) {
+      return NextResponse.json(
+        { message: 'Invalid meeting date/time format.' },
+        { status: 400 }
+      );
+    }
+
+    const now = new Date();
+    const earliestFeedbackAt = new Date(meetingDateTime.getTime() + 2 * 60 * 60 * 1000);
+    const latestValidFeedbackAt = new Date(meetingDateTime.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+    if (now < earliestFeedbackAt) {
+      return NextResponse.json(
+        {
+          message: 'Feedback can only be submitted at least 2 hours after the meeting.',
+          validFrom: earliestFeedbackAt.toISOString(),
+        },
+        { status: 400 }
+      );
+    }
+
+    if (now > latestValidFeedbackAt) {
+      return NextResponse.json(
+        {
+          message: 'Feedback window expired. Feedback must be submitted within 14 days after the meeting.',
+          validUntil: latestValidFeedbackAt.toISOString(),
+        },
+        { status: 400 }
+      );
+    }
+
     // Mark feedback as sent
     user.scheduling[scheduleIndex].feedbackFormSent = true;
     user.scheduling[scheduleIndex].feedbackFormSentAt = new Date().toISOString();
 
-    // Replenish token for mentee (add 1 token back) - only happens once
-    const currentTokens = user.tokens || 0;
-    user.tokens = currentTokens + 1;
+    // Record feedback for cycle evaluation (token is decided at +30 days, not now).
+    if (user.token_cycle && user.token_cycle.status === 'pending') {
+      if (!user.token_cycle.meetingId || user.token_cycle.meetingId === meetingId) {
+        user.token_cycle.meetingId = meetingId;
+        user.token_cycle.meetingDate = meeting.date;
+        user.token_cycle.meetingTime = meeting.time;
+        user.token_cycle.feedbackSubmittedAt = now.toISOString();
+        user.token_cycle.feedbackValid = true;
+      }
+    }
 
     // Update the document
     await containerToUpdate.item(userId, userId).replace(user);
 
-    console.log(`📝 Feedback submitted for meeting ${meetingId} - token replenished: ${currentTokens} → ${user.tokens}`);
+    console.log(`📝 Feedback submitted for meeting ${meetingId} - marked valid for cycle evaluation`);
 
     return NextResponse.json({
-      message: "Feedback submitted successfully and token replenished",
+      message: "Feedback submitted successfully",
       success: true,
-      newTokenBalance: user.tokens
+      newTokenBalance: user.tokens || 0,
+      tokenReplenished: false,
+      tokenReplenishAt: getTokenCycleEvaluateAtIso(user.token_cycle?.tokenUsedAt),
     });
 
   } catch (error) {

@@ -37,16 +37,16 @@ export async function GET(req: NextRequest) {
     const mentor = mentors[0];
     const bookedSlots: string[] = [];
 
-    // Check scheduling array for bookings on the specified date
+    // Check scheduling array for active bookings on the specified date
     if (mentor.scheduling && Array.isArray(mentor.scheduling)) {
       mentor.scheduling.forEach((meeting: any) => {
         // Only consider slots booked if:
         // 1. Date matches
-        // 2. Decision is accepted or pending
-        // 3. NOT cancelled (scheduled_status !== 'cancelled')
+        // 2. Meeting is pending, OR accepted+upcoming
+        // Rejected/declined/cancelled/past should be reusable
         if (meeting.date === date && 
-            (meeting.decision === 'accepted' || meeting.decision === 'pending') &&
-            meeting.scheduled_status !== 'cancelled') {
+            (meeting.decision === 'pending' ||
+             (meeting.decision === 'accepted' && meeting.scheduled_status === 'upcoming'))) {
           bookedSlots.push(meeting.time);
         }
       });

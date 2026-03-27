@@ -4,6 +4,7 @@ import { PatchOperation } from '@azure/cosmos';
 import { v4 as uuidv4 } from 'uuid';
 import type { Scheduling, Mentee, Mentor } from '@/lib/types';
 import { sendEmail } from '@/lib/email';
+import { clampToken } from '@/lib/token-cycle';
 
 // -----------------------------
 // Helper: Check if slot is available
@@ -58,12 +59,11 @@ export async function GET(request: Request) {
         if (!entry.report_status || entry.report_status === 'none') return entry;
 
         const filedByRole = entry.report_filed_by_role ?? null;
-        const isPending = entry.report_status === 'pending';
         const viewerIsReporter = filedByRole === viewerRole;
 
-        if (!isPending || viewerIsReporter) return entry;
+        if (viewerIsReporter) return entry;
 
-        // Hide pending report details from opposite party
+        // Hide report details from opposite party for all statuses.
         return {
           ...entry,
           report_status: 'none',
@@ -361,8 +361,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ m
 
     // If MENTOR (target) cancels → automatically refund token to requester
     if (isMentorCancelling) {
-      const currentTokens = requesterDoc.tokens || 0;
-      requesterDoc.tokens = currentTokens + 1;
+      const currentTokens = clampToken(requesterDoc.tokens);
+      requesterDoc.tokens = 1;
+      if (requesterDoc.token_cycle?.meetingId === meetingID && requesterDoc.token_cycle.status === 'pending') {
+        requesterDoc.token_cycle = undefined;
+      }
       console.log(`💰 Auto-refund: ${currentTokens} → ${requesterDoc.tokens} for ${isMentorRequester ? 'mentor-as-mentee' : 'mentee'} ${requesterDoc.id}`);
     }
 
@@ -454,5 +457,217 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ m
   } catch (err: any) {
     console.error('Schedule DELETE error:', err);
     return NextResponse.json({ message: 'Failed to cancel meeting', error: err.message }, { status: 500 });
+  }
+}
+
+// -----------------------------
+// PATCH: Handle meeting updates (report, etc)
+// -----------------------------
+export async function PATCH(request: Request, { params }: { params: Promise<{ meetingID: string }> }) {
+  try {
+    const { meetingID } = await params;
+    const body = await request.json();
+    const { action, reporterRole, reporterId, reason } = body;
+
+    if (!meetingID || !action) {
+      return NextResponse.json({ message: 'Missing required fields (meetingID, action)' }, { status: 400 });
+    }
+
+    // Handle report action
+    if (action === 'report') {
+      if (!reporterId || !reason || !reporterRole) {
+        return NextResponse.json({ message: 'Missing required fields for report (reporterId, reporterRole, reason)' }, { status: 400 });
+      }
+
+      console.log(`📋 Processing report for meeting ${meetingID}`);
+      console.log(`   Reporter: ${reporterId} (role: ${reporterRole}), Reason: ${reason}`);
+
+      const mentorContainer = database.container('mentor');
+      const menteeContainer = database.container('mentee');
+
+      // Find the meeting in mentor container
+      const { resources: mentors } = await mentorContainer.items.query(`SELECT * FROM c`).fetchAll();
+      
+      let mentorDoc: any = null;
+      let meeting: any = null;
+      let mentorIndex = -1;
+
+      for (const m of mentors) {
+        const idx = m.scheduling?.findIndex((s: any) => s.meetingId === meetingID);
+        if (idx >= 0) {
+          mentorDoc = m;
+          mentorIndex = idx;
+          meeting = m.scheduling[idx];
+          break;
+        }
+      }
+
+      if (!meeting) {
+        return NextResponse.json({ message: 'Meeting not found' }, { status: 404 });
+      }
+
+      console.log(`✅ Found meeting. menteeUID: ${meeting.menteeUID}, mentorUID: ${meeting.mentorUID}`);
+
+      // Determine reporter role from the meeting identity, not client-provided role,
+      // to avoid attribution bugs for mentors acting as mentees.
+      const rawMenteeUID = meeting.menteeUID;
+      const menteeUIDVariants = [
+        rawMenteeUID,
+        rawMenteeUID?.startsWith('mentee_') ? rawMenteeUID.substring(7) : `mentee_${rawMenteeUID}`,
+      ].filter(Boolean);
+
+      const isMentorReporter = reporterId === meeting.mentorUID;
+      const isMenteeReporter = menteeUIDVariants.includes(reporterId);
+
+      if (!isMentorReporter && !isMenteeReporter) {
+        return NextResponse.json({ message: 'Unauthorized reporter for this meeting' }, { status: 403 });
+      }
+
+      const effectiveReporterRole: 'mentor' | 'mentee' = isMentorReporter ? 'mentor' : 'mentee';
+
+      // Determine report type based on actual role
+      let reportType: 'mentor_report' | 'mentee_report';
+      let reportTargetUID: string;
+      let reportTargetRole: 'mentor' | 'mentee';
+
+      if (effectiveReporterRole === 'mentor') {
+        reportType = 'mentor_report';
+        reportTargetUID = meeting.menteeUID;
+        reportTargetRole = 'mentee';
+      } else {
+        reportType = 'mentee_report';
+        reportTargetUID = meeting.mentorUID;
+        reportTargetRole = 'mentor';
+      }
+
+      console.log(`📊 Report details: type=${reportType}, reporter=${reporterId}, target=${reportTargetUID}`);
+
+      // Check if report already exists
+      if (meeting[reportType]) {
+        return NextResponse.json({ message: 'Report already filed for this meeting' }, { status: 409 });
+      }
+
+      // Create report object with all required fields
+      const filedAtIso = new Date().toISOString();
+      const reportData = {
+        status: 'pending',
+        reason: reason,
+        filed_by_uid: reporterId,
+        filed_by_role: effectiveReporterRole,
+        filed_at: filedAtIso,
+        target_uid: reportTargetUID,
+        target_role: reportTargetRole,
+        review_notes: null,
+        reviewed_at: null,
+        reviewed_by: null,
+      };
+
+      // Update mentor's copy of meeting
+      mentorDoc.scheduling[mentorIndex][reportType] = reportData;
+      mentorDoc.scheduling[mentorIndex].report_status = 'pending'; // For backward compatibility
+      mentorDoc.scheduling[mentorIndex].report_reason = reason; // For backward compatibility
+      mentorDoc.scheduling[mentorIndex].report_filed_by_role = effectiveReporterRole; // For backward compatibility
+      mentorDoc.scheduling[mentorIndex].report_filed_by_uid = reporterId; // For backward compatibility
+      mentorDoc.scheduling[mentorIndex].report_filed_at = filedAtIso; // For backward compatibility
+      mentorDoc.scheduling[mentorIndex].report_target_role = reportTargetRole; // For backward compatibility
+      mentorDoc.scheduling[mentorIndex].report_target_uid = reportTargetUID; // For backward compatibility
+
+      await mentorContainer.item(mentorDoc.id, mentorDoc.id).replace(mentorDoc);
+      console.log(`✅ Updated mentor document`);
+
+      // Find and update mentee/requester document
+      const rawMenteeId = meeting.menteeUID;
+      let requesterDoc: any = null;
+      let requesterIndex = -1;
+      let requesterContainer: any = null;
+      let isMentorRequester = false;
+
+      // Try mentee container first - try with and without "mentee_" prefix
+      let searchIds = [rawMenteeId];
+      if (rawMenteeId.startsWith('mentee_')) {
+        searchIds.push(rawMenteeId.substring(7)); // Remove "mentee_" prefix
+      } else {
+        searchIds.push(`mentee_${rawMenteeId}`); // Add "mentee_" prefix
+      }
+
+      for (const searchId of searchIds) {
+        try {
+          const { resource } = await menteeContainer.item(searchId, searchId).read();
+          if (resource) {
+            requesterDoc = resource;
+            requesterContainer = menteeContainer;
+            requesterIndex = resource.scheduling?.findIndex((s: any) => s.meetingId === meetingID);
+            console.log(`✅ Found mentee document`);
+            break;
+          }
+        } catch (err: any) {
+          if (err.code !== 404) {
+            console.error(`Error checking mentee ${searchId}:`, err);
+          }
+        }
+      }
+
+      // If not found in mentee container, try mentor container (mentor as mentee)
+      if (!requesterDoc) {
+        for (const searchId of searchIds) {
+          try {
+            const { resources: matchMentors } = await mentorContainer.items.query({
+              query: `SELECT * FROM c WHERE c.id = @id`,
+              parameters: [{ name: '@id', value: searchId }]
+            }).fetchAll();
+
+            if (matchMentors.length > 0) {
+              requesterDoc = matchMentors[0];
+              requesterContainer = mentorContainer;
+              isMentorRequester = true;
+              requesterIndex = requesterDoc.scheduling?.findIndex((s: any) => s.meetingId === meetingID);
+              console.log(`✅ Found mentor-as-mentee document`);
+              break;
+            }
+          } catch (err) {
+            console.error(`Error checking mentor ${searchId}:`, err);
+          }
+        }
+      }
+
+      if (!requesterDoc) {
+        console.error(`⚠️ Could not find requester document, but report was filed successfully in mentor's record`);
+        // Don't fail here - we already updated mentor's record
+      } else if (requesterIndex >= 0) {
+        // Update requester's copy of meeting
+        requesterDoc.scheduling[requesterIndex][reportType] = reportData;
+        requesterDoc.scheduling[requesterIndex].report_status = 'pending';
+        requesterDoc.scheduling[requesterIndex].report_reason = reason;
+        requesterDoc.scheduling[requesterIndex].report_filed_by_role = effectiveReporterRole;
+        requesterDoc.scheduling[requesterIndex].report_filed_by_uid = reporterId;
+        requesterDoc.scheduling[requesterIndex].report_filed_at = filedAtIso;
+        requesterDoc.scheduling[requesterIndex].report_target_role = reportTargetRole;
+        requesterDoc.scheduling[requesterIndex].report_target_uid = reportTargetUID;
+
+        // Mentor report marks cycle as penalized, regardless of later feedback submission order.
+        if (effectiveReporterRole === 'mentor' && requesterDoc.token_cycle?.status === 'pending') {
+          requesterDoc.token_cycle.mentorReported = true;
+          requesterDoc.token_cycle.reportRecordedAt = filedAtIso;
+          requesterDoc.tokens = clampToken(requesterDoc.tokens);
+        }
+
+        await requesterContainer.item(requesterDoc.id, requesterDoc.id).replace(requesterDoc);
+        console.log(`✅ Updated requester document`);
+      }
+
+      console.log(`✅ Report submitted successfully`);
+
+      return NextResponse.json({
+        success: true,
+        message: 'Report submitted successfully',
+        meetingId: meetingID,
+        reportType: reportType,
+      }, { status: 200 });
+    }
+
+    return NextResponse.json({ message: 'Unknown action' }, { status: 400 });
+  } catch (err: any) {
+    console.error('Schedule PATCH error:', err);
+    return NextResponse.json({ message: 'Failed to process request', error: err.message }, { status: 500 });
   }
 }

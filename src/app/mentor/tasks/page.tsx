@@ -167,6 +167,15 @@ export default function MentorTasksPage() {
           return;
         }
 
+        const normalizedDecision = request.decision === 'declined' ? 'rejected' : request.decision;
+        const isPending = normalizedDecision === 'pending' && request.scheduled_status === 'pending';
+        const isAcceptedUpcoming = normalizedDecision === 'accepted' && request.scheduled_status === 'upcoming';
+        const isRejected = normalizedDecision === 'rejected' || request.scheduled_status === 'rejected';
+
+        if (isRejected) {
+          return;
+        }
+
         // **IMPORTANT: Different filtering logic based on decision status**
         
         // For PENDING requests: Show for both roles (mentor receiving OR mentee who sent)
@@ -211,7 +220,7 @@ export default function MentorTasksPage() {
         const titleDateTime = `${dayName}, ${formattedDate} at ${request.time}`;
 
         // Add pending requests (for both mentor receiving AND mentee who sent)
-        if (request.decision === 'pending') {
+        if (isPending) {
           taskItems.push({
             id: `pending-${request.meetingId}`,
             type: 'pending_request',
@@ -237,7 +246,7 @@ export default function MentorTasksPage() {
         // Add upcoming meetings (accepted AND future - for both mentor and mentee)
         const twoHoursAfterMeeting = new Date(meetingDateTime.getTime() + 2 * 60 * 60 * 1000);
         
-        if (request.decision === 'accepted' && meetingDateTime > now) {
+        if (isAcceptedUpcoming && meetingDateTime > now) {
           const hoursUntilMeeting = Math.floor((meetingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60));
           
           taskItems.push({
@@ -265,7 +274,7 @@ export default function MentorTasksPage() {
         }
 
         // Add in-progress meetings (meeting has started but less than 2 hours have passed)
-        if (request.decision === 'accepted' && meetingDateTime <= now && now < twoHoursAfterMeeting) {
+        if (isAcceptedUpcoming && meetingDateTime <= now && now < twoHoursAfterMeeting) {
           taskItems.push({
             id: `inprogress-${request.meetingId}`,
             type: 'in_progress_meeting',
@@ -288,7 +297,7 @@ export default function MentorTasksPage() {
         }
 
         // Add past meetings (accepted AND 2+ hours have passed - for both mentor and mentee)
-        if (request.decision === 'accepted' && now >= twoHoursAfterMeeting) {
+        if (normalizedDecision === 'accepted' && now >= twoHoursAfterMeeting) {
           const hasFeedback = request.feedbackFormSent ? true : false;
           const hoursAfterMeeting = Math.floor((now.getTime() - meetingDateTime.getTime()) / (1000 * 60 * 60));
           
@@ -320,7 +329,7 @@ export default function MentorTasksPage() {
           // Create feedback task if user was mentee (requester) and feedback is needed
           if (!userIsMentor && hoursAfterMeeting >= 2 && !hasFeedback) {
             const daysAfterMeeting = hoursAfterMeeting / 24;
-            const daysRemaining = Math.max(0, 5 - daysAfterMeeting);
+            const daysRemaining = Math.max(0, 14 - daysAfterMeeting);
             
             console.log(`Checking feedback task for ${request.meetingId} (mentor as mentee) - daysAfter: ${daysAfterMeeting}, daysRemaining: ${daysRemaining}`);
             
@@ -347,7 +356,7 @@ export default function MentorTasksPage() {
                 userRole: 'mentee'
               });
             } else {
-              console.log(`❌ Past 5-day deadline for meeting ${request.meetingId}`);
+              console.log(`❌ Past 14-day deadline for meeting ${request.meetingId}`);
             }
           } else {
             console.log(`❌ Not creating feedback task for ${request.meetingId} - UserIsMentor: ${userIsMentor}, Hours: ${hoursAfterMeeting}, HasFeedback: ${hasFeedback}`);
@@ -643,9 +652,12 @@ export default function MentorTasksPage() {
             variant: "destructive"
           });
         } else {
+          const replenishAtText = data.tokenReplenishAt
+            ? new Date(data.tokenReplenishAt).toLocaleString()
+            : 'the cycle evaluation time';
           toast({
             title: "Feedback Form Opened",
-            description: `Token replenished! New balance: ${data.newTokenBalance} tokens`,
+            description: `Token will be replenished after ${replenishAtText} if eligible.`,
           });
         }
         
@@ -696,7 +708,7 @@ export default function MentorTasksPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'report',
-            reporterRole: 'mentor',
+            reporterRole: selectedMeetingToReport.userRole === 'mentee' ? 'mentee' : 'mentor',
             reporterId: user.id,
             reason: trimmedReason,
           }),
@@ -1078,7 +1090,7 @@ export default function MentorTasksPage() {
               <div className="bg-white rounded-xl shadow-lg p-6 sm:p-8">
                 <AnimatePresence mode="popLayout">
                   {tasks.map((task, index) => {
-                    const mentorReportStatus = task.mentorReport?.status;
+                    const mentorReportStatus = task.userRole === 'mentor' ? task.mentorReport?.status : undefined;
                     const myReportPending = mentorReportStatus === 'pending';
                     const myReportResolved = mentorReportStatus === 'resolved';
                     const dateInfo = getDateDisplay(task.date);
@@ -1479,7 +1491,7 @@ export default function MentorTasksPage() {
                   </div>
                 )}
 
-                {selectedTask.type === 'past_meeting' && selectedTask.mentorReport && (
+                {selectedTask.type === 'past_meeting' && selectedTask.userRole === 'mentor' && selectedTask.mentorReport && (
                   <div className="p-4 bg-orange-50 rounded-xl border-2 border-orange-200">
                     <div className="flex items-start gap-3">
                       <ShieldAlert className="w-5 h-5 text-orange-700 mt-0.5 flex-shrink-0" />

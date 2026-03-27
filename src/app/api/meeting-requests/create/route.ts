@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     
     // First, get the mentor document
     const querySpec = {
-      query: "SELECT * FROM c WHERE c.mentorUID = @mentorId",
+      query: "SELECT * FROM c WHERE c.mentorUID = @mentorId OR c.id = @mentorId",
       parameters: [
         {
           name: "@mentorId",

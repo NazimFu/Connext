@@ -1,4 +1,12 @@
 import { database } from './cosmos';
+import { clampToken } from './token-cycle';
+import { sendEmail } from './email';
+
+// Keep pending requests visible for a while after scheduled start time
+// so mentors still have time to accept/reject near-time requests.
+// Testing config: auto-expire unresolved pending requests after 30 minutes.
+// Production target: 3 * 24 * 60 * 60 * 1000 (3 days).
+const PENDING_REQUEST_EXPIRY_MS = 30 * 60 * 1000;
 
 /**
  * Cleanup expired pending meeting requests
@@ -55,8 +63,9 @@ export async function cleanupExpiredMeetings(): Promise<{
             meetingDateTime = new Date(year, month - 1, day, hours, minutes);
           }
           
-          // Check if meeting time has passed
-          if (meetingDateTime < now) {
+          // Expire only after grace window, not immediately at start time.
+          const expiresAt = new Date(meetingDateTime.getTime() + PENDING_REQUEST_EXPIRY_MS);
+          if (expiresAt < now) {
             console.log(`⏰ Expired: ${meeting.meetingId} - ${meeting.date} ${meeting.time} (scheduled: ${meetingDateTime.toISOString()})`);
             expiredMeetings.push(meeting);
             mentor.scheduling.splice(i, 1);
@@ -134,8 +143,11 @@ export async function cleanupExpiredMeetings(): Promise<{
           }
           
           if (requester) {
-            const currentTokens = requester.tokens || 0;
-            requester.tokens = currentTokens + 1;
+            const currentTokens = clampToken(requester.tokens);
+            requester.tokens = 1;
+            if (requester.token_cycle?.meetingId === expiredMeeting.meetingId && requester.token_cycle.status === 'pending') {
+              requester.token_cycle = undefined;
+            }
             
             if (isRequesterMentor) {
               await mentorContainer.item(requester.id, requester.id).replace(requester);
@@ -145,6 +157,27 @@ export async function cleanupExpiredMeetings(): Promise<{
             
             tokensRefunded++;
             console.log(`💰 Refunded 1 token to ${isRequesterMentor ? 'mentor' : 'mentee'} ${requester.id}. New balance: ${requester.tokens}`);
+
+            const recipientName = requester.mentee_name || requester.name || requester.mentor_name || 'there';
+            const recipientEmail = requester.mentee_email || requester.email || requester.mentor_email;
+
+            if (recipientEmail) {
+              try {
+                await sendEmail({
+                  to: recipientEmail,
+                  subject: 'No response from mentor - your token is returned',
+                  template: 'mentee-meeting-no-response',
+                  data: {
+                    menteeName: recipientName,
+                    mentorName: expiredMeeting.mentor_name || 'the mentor',
+                    date: expiredMeeting.date,
+                    time: expiredMeeting.time,
+                  },
+                });
+              } catch (emailError) {
+                console.error(`Failed to send no-response email for meeting ${expiredMeeting.meetingId}:`, emailError);
+              }
+            }
           } else {
             console.warn(`Could not find requester for expired meeting ${expiredMeeting.meetingId} with menteeUID ${menteeId}`);
           }

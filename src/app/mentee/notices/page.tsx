@@ -249,10 +249,10 @@ export default function MenteeNoticesPage() {
           // Create feedback task if:
           // 1. Meeting is at least 2 hours past
           // 2. No feedback submitted yet
-          // 3. Within 5 days deadline
+          // 3. Within 14 days deadline
           if (hoursAfterMeeting >= 2 && !hasFeedback) {
             const daysAfterMeeting = hoursAfterMeeting / 24;
-            const daysRemaining = Math.max(0, 5 - daysAfterMeeting);
+            const daysRemaining = Math.max(0, 14 - daysAfterMeeting);
             
             console.log(`Checking feedback task for ${request.meetingId} - daysAfter: ${daysAfterMeeting}, daysRemaining: ${daysRemaining}`);
             
@@ -274,7 +274,7 @@ export default function MenteeNoticesPage() {
                 feedbackFormUrl: request.feedbackFormUrl
               });
             } else {
-              console.log(`❌ Past 5-day deadline for meeting ${request.meetingId}`);
+              console.log(`❌ Past 14-day deadline for meeting ${request.meetingId}`);
             }
           } else {
             console.log(`❌ Not creating feedback task for ${request.meetingId} - Hours: ${hoursAfterMeeting}, HasFeedback: ${hasFeedback}`);
@@ -373,9 +373,12 @@ export default function MenteeNoticesPage() {
       const data = await response.json();
 
       if (response.ok) {
+        const replenishAtText = data.tokenReplenishAt
+          ? new Date(data.tokenReplenishAt).toLocaleString()
+          : 'the cycle evaluation time';
         toast({
           title: "Feedback Submitted! 🎉",
-          description: `Token replenished! New balance: ${data.newTokenBalance} tokens`,
+          description: `Token will be replenished after ${replenishAtText} if eligible.`,
         });
         setIsDialogOpen(false);
         fetchTasks(); // Refresh the task list
@@ -1166,9 +1169,12 @@ export default function MenteeNoticesPage() {
                                 variant: "destructive"
                               });
                             } else {
+                              const replenishAtText = data.tokenReplenishAt
+                                ? new Date(data.tokenReplenishAt).toLocaleString()
+                                : 'the cycle evaluation time';
                               toast({
                                 title: "Feedback Submitted",
-                                description: `Token replenished! New balance: ${data.newTokenBalance} tokens`,
+                                description: `Token will be replenished after ${replenishAtText} if eligible.`,
                               });
                             }
                           }

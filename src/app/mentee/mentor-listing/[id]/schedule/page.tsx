@@ -126,7 +126,7 @@ export default function SchedulePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          mentorId: mentor.id,
+          mentorId: mentor.mentorUID || mentor.id,
           menteeId: user.id,
           mentee_name: user.name || "Unknown User",
           mentee_email: user.email,

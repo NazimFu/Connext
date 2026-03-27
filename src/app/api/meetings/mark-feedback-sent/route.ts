@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { database } from "@/lib/cosmos";
+import { getTokenCycleEvaluateAtIso, parseMeetingDateTime } from '@/lib/token-cycle';
 
 export async function POST(req: NextRequest) {
   try {
@@ -60,21 +61,43 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const meeting = user.scheduling[scheduleIndex];
+    const meetingDateTime = parseMeetingDateTime(meeting.date, meeting.time);
+    if (!meetingDateTime) {
+      return NextResponse.json(
+        { message: 'Invalid meeting date/time format.' },
+        { status: 400 }
+      );
+    }
+
+    const now = new Date();
+    const earliestFeedbackAt = new Date(meetingDateTime.getTime() + 2 * 60 * 60 * 1000);
+    const latestValidFeedbackAt = new Date(meetingDateTime.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+    if (now < earliestFeedbackAt || now > latestValidFeedbackAt) {
+      return NextResponse.json(
+        { message: 'Feedback can only be submitted from 2 hours to 14 days after the meeting.' },
+        { status: 400 }
+      );
+    }
+
     // Mark feedback as sent
     user.scheduling[scheduleIndex].feedbackFormSent = true;
     user.scheduling[scheduleIndex].feedbackFormSentAt = new Date().toISOString();
 
-    // Replenish token for mentee (add 1 token back)
-    const currentTokens = user.tokens || 0;
-    user.tokens = currentTokens + 1;
+    if (user.token_cycle?.status === 'pending' && user.token_cycle.meetingId === meetingId) {
+      user.token_cycle.feedbackSubmittedAt = now.toISOString();
+      user.token_cycle.feedbackValid = true;
+    }
 
     // Update the document
     await containerToUpdate.item(userId, userId).replace(user);
 
     return NextResponse.json({
-      message: "Feedback marked as sent and token replenished",
+      message: "Feedback marked as sent",
       success: true,
-      newTokenBalance: user.tokens
+      newTokenBalance: user.tokens,
+      tokenReplenishAt: getTokenCycleEvaluateAtIso(user.token_cycle?.tokenUsedAt),
     });
 
   } catch (error) {

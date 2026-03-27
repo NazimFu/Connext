@@ -79,6 +79,19 @@ export type User = {
   verified: boolean;
   verificationStatus: 'not-submitted' | 'pending' | 'just-approved' | 'approved' | 'rejected';
   tokens: number;
+  token_cycle?: {
+    status: 'pending' | 'replenished' | 'forfeited';
+    meetingId: string;
+    meetingDate: string;
+    meetingTime: string;
+    tokenUsedAt: string;
+    feedbackSubmittedAt: string | null;
+    feedbackValid: boolean;
+    mentorReported: boolean;
+    reportRecordedAt: string | null;
+    evaluatedAt: string | null;
+  };
+  tokenReplenishAt?: string | null;
   scheduling?: Scheduling[];
   linkedin?: string;
   github?: string;
@@ -101,6 +114,18 @@ export type Mentee = {
   verified: boolean;
   verificationStatus: 'not-submitted' | 'pending' | 'just-approved' | 'approved' | 'rejected';
   tokens: number;
+  token_cycle?: {
+    status: 'pending' | 'replenished' | 'forfeited';
+    meetingId: string;
+    meetingDate: string;
+    meetingTime: string;
+    tokenUsedAt: string;
+    feedbackSubmittedAt: string | null;
+    feedbackValid: boolean;
+    mentorReported: boolean;
+    reportRecordedAt: string | null;
+    evaluatedAt: string | null;
+  };
   attachmentPath?: string;
   allowCVShare?: boolean;
   linkedin_url?: string;
@@ -132,6 +157,18 @@ export type Mentor = {
   verified: boolean;
   verificationStatus: 'not-submitted' | 'pending' | 'just-approved' | 'approved' | 'rejected';
   tokens: number;
+  token_cycle?: {
+    status: 'pending' | 'replenished' | 'forfeited';
+    meetingId: string;
+    meetingDate: string;
+    meetingTime: string;
+    tokenUsedAt: string;
+    feedbackSubmittedAt: string | null;
+    feedbackValid: boolean;
+    mentorReported: boolean;
+    reportRecordedAt: string | null;
+    evaluatedAt: string | null;
+  };
   linkedin: string;
   github: string;
   available_slots: {

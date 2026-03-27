@@ -3,7 +3,6 @@ import { database } from '@/lib/cosmos';
 import { PatchOperation } from '@azure/cosmos';
 import type { Mentor, Mentee, Scheduling } from '@/lib/types';
 import { locateMeeting, findScheduleIndex } from '@/lib/server/meeting-utils';
-import { sendEmail } from '@/lib/email';
 
 type ReportStatus = 'pending' | 'resolved' | 'rejected';
 
@@ -187,7 +186,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: 'Meeting not found' }, { status: 404 });
     }
 
-    let { mentor, mentorScheduleIndex, mentee, menteeScheduleIndex, meeting } = lookup;
+    let { mentor, mentorScheduleIndex, mentee, menteeScheduleIndex, meeting, menteeIsInMentorContainer } = lookup;
 
     const resolvedTimestamp = (normalizedStatus === 'resolved' || normalizedStatus === 'rejected') ? new Date().toISOString() : null;
 
@@ -236,101 +235,35 @@ export async function PATCH(request: Request) {
     }
 
     if (menteeOperations.length > 0) {
-      await menteeContainer.item(mentee!.id, mentee!.id).patch(menteeOperations);
-      const { resource: updatedMentee } = await menteeContainer.item(mentee!.id, mentee!.id).read<Mentee>();
-      if (updatedMentee) {
-        mentee = updatedMentee;
-        menteeScheduleIndex = findScheduleIndex(updatedMentee.scheduling, meetingId);
-        meeting = updatedMentee.scheduling?.[menteeScheduleIndex] ?? meeting;
+      if (menteeIsInMentorContainer) {
+        await mentorContainer.item((mentee as any).id, (mentee as any).id).patch(menteeOperations);
+        const { resource: updatedMenteeAsMentor } = await mentorContainer
+          .item((mentee as any).id, (mentee as any).id)
+          .read<Mentor>();
+        if (updatedMenteeAsMentor) {
+          mentee = updatedMenteeAsMentor as any;
+          menteeScheduleIndex = findScheduleIndex((updatedMenteeAsMentor as any).scheduling, meetingId);
+          meeting = (updatedMenteeAsMentor as any).scheduling?.[menteeScheduleIndex] ?? meeting;
+        }
+      } else {
+        await menteeContainer.item(mentee!.id, mentee!.id).patch(menteeOperations);
+        const { resource: updatedMentee } = await menteeContainer.item(mentee!.id, mentee!.id).read<Mentee>();
+        if (updatedMentee) {
+          mentee = updatedMentee;
+          menteeScheduleIndex = findScheduleIndex(updatedMentee.scheduling, meetingId);
+          meeting = updatedMentee.scheduling?.[menteeScheduleIndex] ?? meeting;
+        }
       }
     }
 
-    // Handle token deduction if report is approved (resolved) against mentee
-    if (normalizedStatus === 'resolved' && reportType === 'mentor_report') {
-      // Mentor reported mentee, deduct token from mentee/requester
-      const actualMenteeId = meeting.menteeUID;
-      
-      let requester: any = null;
-      let isRequesterMentor = false;
-      let requesterContainer: any = null;
-      
-      // Find requester (could be mentee or mentor acting as mentee)
-      try {
-        if (actualMenteeId) {
-          const { resource: menteeResource } = await menteeContainer.item(actualMenteeId, actualMenteeId).read();
-          if (menteeResource) {
-            requester = menteeResource;
-            requesterContainer = menteeContainer;
-          }
-        }
-      } catch (err: any) {
-        if (err.code === 404) {
-          // Try mentor container
-          const requesterQuerySpec = {
-            query: 'SELECT * FROM c WHERE c.mentee_id = @menteeId',
-            parameters: [{ name: '@menteeId', value: actualMenteeId }],
-          };
-          
-          const { resources: mentorRequesters } = await mentorContainer.items
-            .query(requesterQuerySpec)
-            .fetchAll();
-          
-          if (mentorRequesters.length > 0) {
-            requester = mentorRequesters[0];
-            requesterContainer = mentorContainer;
-            isRequesterMentor = true;
-          }
-        }
-      }
-      
-      if (requester) {
-        const currentTokens = requester.tokens || 0;
-        requester.tokens = Math.max(0, currentTokens - 1);
-        
-        if (isRequesterMentor) {
-          await mentorContainer.item(requester.id, requester.mentorUID).replace(requester);
-        } else {
-          await menteeContainer.item(requester.id, requester.id).replace(requester);
-        }
-        
-        console.log(`💰 Deducted 1 token from requester (admin approved report). New balance: ${requester.tokens}`);
-        
-        // Send penalty notification email to the reported mentee
-        const menteeEmail = isRequesterMentor ? requester.mentor_email : (requester.mentee_email || requester.email);
-        const menteeName = isRequesterMentor ? requester.mentor_name : (requester.mentee_name || requester.name);
-        const mentorName = meeting.mentor_name || mentor?.mentor_name || 'Your mentor';
-        const reportReason = meeting.mentor_report?.reason || meeting.report_reason || 'No reason provided';
-        
-        if (menteeEmail) {
-          try {
-            await sendEmail({
-              to: menteeEmail,
-              subject: '⚠️ Account Penalty Notice - Report Accepted',
-              template: 'report-penalty-notification',
-              data: {
-                menteeName: menteeName,
-                mentorName: mentorName,
-                meetingDate: meeting.date,
-                meetingTime: meeting.time,
-                reportReason: reportReason,
-                newTokenBalance: requester.tokens,
-              },
-            });
-            console.log(`📧 Penalty notification email sent to ${menteeEmail}`);
-          } catch (emailError) {
-            console.error('❌ Failed to send penalty notification email:', emailError);
-            // Don't fail the whole operation if email fails
-          }
-        }
-      }
-    }
+    // Token changes are handled only by the 30-day cycle evaluator.
 
     return NextResponse.json({
       success: true,
       meeting,
       status: normalizedStatus,
       message: normalizedStatus === 'resolved' 
-        ? 'Report accepted and mentee penalized' 
+        ? 'Report accepted' 
         : normalizedStatus === 'rejected' 
         ? 'Report rejected' 
         : 'Report status updated',

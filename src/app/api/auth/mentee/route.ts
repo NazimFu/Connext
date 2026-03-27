@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { User } from '@/lib/types';
+import { clampToken, evaluateTokenCycleForUser, getTokenCycleEvaluateAtIso } from '@/lib/token-cycle';
 
 export async function POST(request: Request) {
   try {
@@ -30,6 +31,10 @@ export async function POST(request: Request) {
     }
 
     const mentee = mentees[0];
+    const evalResult = evaluateTokenCycleForUser(mentee);
+    if (evalResult.changed) {
+      await menteeContainer.item(mentee.id, mentee.id).replace(mentee);
+    }
     console.log('Auth mentee - Found mentee document:', {
       id: mentee.id,
       menteeUID: mentee.menteeUID,
@@ -46,7 +51,9 @@ export async function POST(request: Request) {
       role: 'mentee',
       verified: mentee.verified ?? false,
       verificationStatus: mentee.verificationStatus ?? 'not-submitted',
-      tokens: mentee.tokens ?? 0,
+      tokens: clampToken(mentee.tokens),
+      token_cycle: mentee.token_cycle,
+      tokenReplenishAt: getTokenCycleEvaluateAtIso(mentee.token_cycle?.tokenUsedAt),
       linkedin: mentee.linkedin,
       github: mentee.github,
       cv_link: mentee.cv_link,

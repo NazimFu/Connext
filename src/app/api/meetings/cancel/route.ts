@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
+import { clampToken } from '@/lib/token-cycle';
 
 export const dynamic = 'force-dynamic';
 
@@ -206,8 +207,11 @@ export async function POST(req: NextRequest) {
 
     // ---------------- Token handling ----------------
     if (action === "approve") {
-      const currentTokens = requesterDoc.tokens || 0;
-      requesterDoc.tokens = currentTokens + 1;
+      const currentTokens = clampToken(requesterDoc.tokens);
+      requesterDoc.tokens = 1;
+      if (requesterDoc.token_cycle?.meetingId === meetingId && requesterDoc.token_cycle.status === 'pending') {
+        requesterDoc.token_cycle = undefined;
+      }
       console.log(`💰 Replenished token: ${currentTokens} → ${requesterDoc.tokens} for ${isMentorRequester ? 'mentor' : 'mentee'} ${requesterDoc.id}`);
     } else {
       console.log(`❌ Token NOT replenished (cancellation rejected)`);

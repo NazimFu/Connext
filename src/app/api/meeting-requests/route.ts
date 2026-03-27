@@ -2,6 +2,47 @@ import { NextRequest, NextResponse } from "next/server";
 import { database } from "@/lib/cosmos";
 import { sendEmail } from "@/lib/email";
 import { cleanupExpiredMeetings } from "@/lib/cleanup-expired-meetings";
+import { fromZonedTime } from 'date-fns-tz';
+import { buildFreshTokenCycle, clampToken, evaluateTokenCycleForUser, getTokenCycleEvaluateAtIso } from '@/lib/token-cycle';
+
+// Testing config: require at least 30 minutes lead time before meeting.
+// Production target: 3 * 24 * 60 * 60 * 1000 (3 days).
+const MIN_REQUEST_LEAD_TIME_MS = 30 * 60 * 1000;
+const MY_TIMEZONE = 'Asia/Kuala_Lumpur';
+
+const parseMeetingDateTimeInMalaysia = (date: string, time: string): Date | null => {
+  try {
+    const baseDate = new Date(`${date}T00:00:00`);
+    if (Number.isNaN(baseDate.getTime())) return null;
+
+    let hours = 0;
+    let minutes = 0;
+
+    if (time.includes('AM') || time.includes('PM')) {
+      const [rawTime, period] = time.split(' ');
+      const [hoursRaw, minutesRaw] = rawTime.split(':').map(Number);
+      if (Number.isNaN(hoursRaw) || Number.isNaN(minutesRaw)) return null;
+      hours =
+        period === 'PM' && hoursRaw !== 12
+          ? hoursRaw + 12
+          : period === 'AM' && hoursRaw === 12
+            ? 0
+            : hoursRaw;
+      minutes = minutesRaw;
+    } else {
+      const [h, m] = time.split(':').map(Number);
+      if (Number.isNaN(h) || Number.isNaN(m)) return null;
+      hours = h;
+      minutes = m;
+    }
+
+    const malaysiaLocalDateTime = `${date}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+    const utcDate = fromZonedTime(malaysiaLocalDateTime, MY_TIMEZONE);
+    return Number.isNaN(utcDate.getTime()) ? null : utcDate;
+  } catch {
+    return null;
+  }
+};
 
 export async function GET(req: NextRequest) {
   try {
@@ -31,12 +72,37 @@ export async function GET(req: NextRequest) {
     }
 
     const mentorContainer = database.container('mentor');
+
+    const sanitizeForMenteeView = (meeting: any) => ({
+      ...meeting,
+      report_status: 'none',
+      report_reason: null,
+      report_filed_by_role: null,
+      report_filed_by_uid: null,
+      report_filed_at: null,
+      report_target_role: null,
+      report_target_uid: null,
+      report_review_notes: null,
+      report_reviewed_at: null,
+      report_reviewed_by: null,
+      mentor_report: undefined,
+      mentee_report: undefined,
+    });
+    const normalizedDecision = (meeting: any) => {
+      if (meeting?.decision === 'accepted' || meeting?.decision === 'rejected' || meeting?.decision === 'pending') {
+        return meeting.decision;
+      }
+      if (meeting?.scheduled_status === 'pending') {
+        return 'pending';
+      }
+      return meeting?.decision;
+    };
     let allMeetings: any[] = [];
 
     // Query by mentorId (user is RECEIVING requests as a mentor)
     if (mentorId) {
       const mentorQuerySpec = {
-        query: "SELECT * FROM c WHERE c.mentorUID = @mentorId",
+        query: "SELECT * FROM c WHERE c.mentorUID = @mentorId OR c.id = @mentorId",
         parameters: [{ name: "@mentorId", value: mentorId }]
       };
 
@@ -48,11 +114,13 @@ export async function GET(req: NextRequest) {
         const mentor = mentors[0];
         if (mentor.scheduling && Array.isArray(mentor.scheduling)) {
           mentor.scheduling.forEach((meeting: any) => {
-            // **IMPORTANT: Only include meetings where this mentor is the TARGET (mentorUID)**
-            // This filters OUT meetings where the mentor made the request (as mentee)
-            if (meeting.scheduled_status !== 'cancelled' && meeting.mentorUID === mentorId) {
+            // Inbox view should show all non-cancelled meetings this mentor is receiving.
+            // Exclude self-requested meetings by matching mentor's own mentee_id.
+            const isSelfRequestedMeeting = Boolean(mentor.mentee_id) && meeting.menteeUID === mentor.mentee_id;
+            if (meeting.scheduled_status !== 'cancelled' && !isSelfRequestedMeeting) {
               allMeetings.push({
                 ...meeting,
+                decision: normalizedDecision(meeting),
                 mentor_name: mentor.mentor_name,
                 mentor_email: mentor.mentor_email,
               });
@@ -68,7 +136,7 @@ export async function GET(req: NextRequest) {
     if (menteeId) {
       // First, check if menteeId is actually a mentor's mentorUID
       const requesterQuerySpec = {
-        query: "SELECT * FROM c WHERE c.mentorUID = @menteeId",
+        query: "SELECT * FROM c WHERE c.mentorUID = @menteeId OR c.id = @menteeId",
         parameters: [{ name: "@menteeId", value: menteeId }]
       };
 
@@ -80,6 +148,11 @@ export async function GET(req: NextRequest) {
         // This is a mentor acting as mentee
         const requesterMentor = requesterMentors[0];
         const actualMenteeId = requesterMentor.mentee_id;
+
+        const evalResult = evaluateTokenCycleForUser(requesterMentor);
+        if (evalResult.changed) {
+          await mentorContainer.item(requesterMentor.id, requesterMentor.id).replace(requesterMentor);
+        }
 
         console.log(`menteeId ${menteeId} is a mentor with mentee_id: ${actualMenteeId}`);
 
@@ -94,7 +167,8 @@ export async function GET(req: NextRequest) {
                 meeting.menteeUID === actualMenteeId &&
                 meeting.mentorUID !== menteeId) {
               allMeetings.push({
-                ...meeting,
+                ...sanitizeForMenteeView(meeting),
+                decision: normalizedDecision(meeting),
               });
             }
           });
@@ -107,12 +181,20 @@ export async function GET(req: NextRequest) {
         
         try {
           const { resource: mentee } = await menteeContainer.item(menteeId, menteeId).read();
+
+          if (mentee) {
+            const evalResult = evaluateTokenCycleForUser(mentee);
+            if (evalResult.changed) {
+              await menteeContainer.item(mentee.id, mentee.id).replace(mentee);
+            }
+          }
           
           if (mentee && mentee.scheduling && Array.isArray(mentee.scheduling)) {
             mentee.scheduling.forEach((meeting: any) => {
               if (meeting.scheduled_status !== 'cancelled') {
                 allMeetings.push({
-                  ...meeting,
+                  ...sanitizeForMenteeView(meeting),
+                  decision: normalizedDecision(meeting),
                   menteeUID: menteeId,
                 });
               }
@@ -220,7 +302,7 @@ export async function POST(req: NextRequest) {
     // Get TARGET mentor info
     const mentorContainer = database.container('mentor');
     const mentorQuerySpec = {
-      query: "SELECT * FROM c WHERE c.mentorUID = @mentorId",
+      query: "SELECT * FROM c WHERE c.mentorUID = @mentorId OR c.id = @mentorId",
       parameters: [{ name: "@mentorId", value: mentorId }]
     };
 
@@ -242,8 +324,12 @@ export async function POST(req: NextRequest) {
       const isSlotTaken = targetMentor.scheduling.some((meeting: any) => 
         meeting.date === date && 
         meeting.time === time && 
-        (meeting.decision === 'accepted' || meeting.decision === 'pending') &&
-        meeting.scheduled_status !== 'cancelled'
+        // Only active pending requests or upcoming accepted meetings block the slot.
+        // Rejected/declined/cancelled/past meetings should not block reuse.
+        (
+          meeting.decision === 'pending' ||
+          (meeting.decision === 'accepted' && meeting.scheduled_status === 'upcoming')
+        )
       );
 
       if (isSlotTaken) {
@@ -260,6 +346,51 @@ export async function POST(req: NextRequest) {
     const meetingId = `meeting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const createdAt = new Date().toISOString();
 
+    const scheduledMeetingDateTime = parseMeetingDateTimeInMalaysia(date, time);
+    if (!scheduledMeetingDateTime) {
+      return NextResponse.json(
+        {
+          message: 'Invalid meeting date/time format.',
+          error: 'INVALID_MEETING_DATETIME',
+          receivedDate: date,
+          receivedTime: time,
+        },
+        { status: 400 }
+      );
+    }
+
+    const now = new Date();
+    const timeUntilMeeting = scheduledMeetingDateTime.getTime() - now.getTime();
+
+    if (timeUntilMeeting <= 0) {
+      return NextResponse.json(
+        {
+          message: 'Meeting time must be in the future.',
+          error: 'MEETING_TIME_PASSED',
+          receivedDate: date,
+          receivedTime: time,
+          parsedMeetingIso: scheduledMeetingDateTime.toISOString(),
+          serverNowIso: now.toISOString(),
+        },
+        { status: 400 }
+      );
+    }
+
+    if (timeUntilMeeting < MIN_REQUEST_LEAD_TIME_MS) {
+      return NextResponse.json(
+        {
+          message: 'This meeting is too soon to request. Please choose a time at least 30 minutes from now (testing window).',
+          error: 'REQUEST_TOO_CLOSE',
+          minimumLeadTimeMinutes: Math.floor(MIN_REQUEST_LEAD_TIME_MS / 60000),
+          receivedDate: date,
+          receivedTime: time,
+          parsedMeetingIso: scheduledMeetingDateTime.toISOString(),
+          serverNowIso: now.toISOString(),
+        },
+        { status: 400 }
+      );
+    }
+
     // Determine if the requester is a mentor or mentee
     let actualMenteeId = menteeId;
     let requesterMentor = null;
@@ -269,7 +400,7 @@ export async function POST(req: NextRequest) {
     // Check if requester is a mentor (by checking if menteeId is actually a mentorUID)
     try {
       const requesterMentorQuerySpec = {
-        query: "SELECT * FROM c WHERE c.mentorUID = @menteeId",
+        query: "SELECT * FROM c WHERE c.mentorUID = @menteeId OR c.id = @menteeId",
         parameters: [{ name: "@menteeId", value: menteeId }]
       };
 
@@ -303,10 +434,33 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Check if requester has enough tokens
+    // Check if requester has enough tokens (strict 0/1 model)
     if (requester) {
-      const currentTokens = requester.tokens || 0;
-      if (currentTokens <= 0) {
+      requester.tokens = clampToken(requester.tokens);
+
+      const evalResult = evaluateTokenCycleForUser(requester);
+      if (evalResult.changed) {
+        if (isRequesterMentor) {
+          await mentorContainer.item(requester.id, requester.id).replace(requester);
+        } else {
+          const menteeContainer = database.container('mentee');
+          await menteeContainer.item(requester.id, requester.id).replace(requester);
+        }
+      }
+
+      if (requester.token_cycle?.status === 'pending') {
+        return NextResponse.json(
+          {
+            message: 'You already have an active token cycle. Complete it before requesting another meeting.',
+            error: 'ACTIVE_TOKEN_CYCLE',
+            tokenReplenishAt: getTokenCycleEvaluateAtIso(requester.token_cycle.tokenUsedAt),
+          },
+          { status: 409 }
+        );
+      }
+
+      const currentTokens = clampToken(requester.tokens);
+      if (currentTokens < 1) {
         return NextResponse.json(
           { 
             message: "Insufficient tokens. You need at least 1 token to request a meeting.",
@@ -318,8 +472,8 @@ export async function POST(req: NextRequest) {
       }
       console.log(`✅ Requester has ${currentTokens} tokens available`);
       
-      // Deduct 1 token immediately when creating the request
-      requester.tokens = currentTokens - 1;
+      // Consume token for this cycle.
+      requester.tokens = 0;
       console.log(`💰 DEDUCTING TOKEN: ${currentTokens} → ${requester.tokens}`);
       
     } else {
@@ -331,6 +485,11 @@ export async function POST(req: NextRequest) {
         { status: 404 }
       );
     }
+
+    // Start cycle timing from actual token usage (request creation time),
+    // not scheduled meeting time.
+    const tokenUsageAt = createdAt;
+    requester.token_cycle = buildFreshTokenCycle(meetingId, date, time, tokenUsageAt);
 
     // **IMPORTANT: Structure the meeting object correctly**
     const newMeeting = {
@@ -397,6 +556,7 @@ export async function POST(req: NextRequest) {
 
         mentee.scheduling.push(newMeeting);
         mentee.tokens = requester.tokens; // Update token count
+        mentee.token_cycle = requester.token_cycle;
         await menteeContainer.item(actualMenteeId, actualMenteeId).replace(mentee);
         
         console.log('✅ Meeting stored in MENTEE table:', meetingId);
@@ -497,7 +657,7 @@ export async function PATCH(req: NextRequest) {
     
     // 1. Update the TARGET MENTOR (the one accepting/rejecting)
     const querySpec = {
-      query: "SELECT * FROM c WHERE c.mentorUID = @mentorId",
+      query: "SELECT * FROM c WHERE c.mentorUID = @mentorId OR c.id = @mentorId",
       parameters: [{ name: "@mentorId", value: mentorId }]
     };
 
@@ -584,8 +744,11 @@ export async function PATCH(req: NextRequest) {
 
             // Replenish token if declined or rejected
             if (isRejected) {
-              const currentTokens = mentee.tokens || 0;
-              mentee.tokens = currentTokens + 1;
+              const currentTokens = clampToken(mentee.tokens);
+              mentee.tokens = 1;
+              if (mentee.token_cycle?.meetingId === meetingId && mentee.token_cycle.status === 'pending') {
+                mentee.token_cycle = undefined;
+              }
               console.log(`💰 REPLENISHING TOKEN: ${currentTokens} → ${mentee.tokens} for mentee ${menteeId}`);
             }
 
@@ -630,8 +793,11 @@ export async function PATCH(req: NextRequest) {
 
               // Replenish token if declined or rejected
               if (isRejected) {
-                const currentTokens = requesterMentor.tokens || 0;
-                requesterMentor.tokens = currentTokens + 1;
+                const currentTokens = clampToken(requesterMentor.tokens);
+                requesterMentor.tokens = 1;
+                if (requesterMentor.token_cycle?.meetingId === meetingId && requesterMentor.token_cycle.status === 'pending') {
+                  requesterMentor.token_cycle = undefined;
+                }
                 console.log(`💰 REPLENISHING TOKEN for mentor: ${currentTokens} → ${requesterMentor.tokens}`);
               }
 

@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/cleanup-expired-requests",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/evaluate-token-cycles",
+      "schedule": "5 0 * * *"
     }
   ]
 }

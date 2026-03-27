@@ -34,14 +34,13 @@ export async function GET(request: Request) {
 
                 const filedByRole = entry.report_filed_by_role ?? null;
 
-                const isPendingReport = entry.report_status === 'pending';
                 const viewerIsReporter = filedByRole === viewerRole;
 
-                if (!isPendingReport || viewerIsReporter) {
+                if (viewerIsReporter) {
                     return entry;
                 }
 
-                // Hide pending report details from the opposite party
+                // Hide report details from the opposite party for all statuses.
                 return {
                     ...entry,
                     report_status: 'none',

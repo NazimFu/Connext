@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
+import { getTokenCycleEvaluateAtIso, parseMeetingDateTime } from '@/lib/token-cycle';
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,6 +16,39 @@ export async function POST(req: NextRequest) {
 
     const mentorContainer = database.container('mentor');
     const menteeContainer = database.container('mentee');
+
+    const validateFeedbackWindow = (meeting: any) => {
+      if (meeting.decision !== 'accepted') {
+        return { ok: false, status: 400, message: 'Feedback can only be submitted for accepted meetings.' };
+      }
+
+      const meetingDateTime = parseMeetingDateTime(meeting.date, meeting.time);
+      if (!meetingDateTime) {
+        return { ok: false, status: 400, message: 'Invalid meeting date/time format.' };
+      }
+
+      const now = new Date();
+      const earliestFeedbackAt = new Date(meetingDateTime.getTime() + 2 * 60 * 60 * 1000);
+      const latestValidFeedbackAt = new Date(meetingDateTime.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+      if (now < earliestFeedbackAt) {
+        return {
+          ok: false,
+          status: 400,
+          message: 'Feedback can only be submitted at least 2 hours after the meeting.',
+        };
+      }
+
+      if (now > latestValidFeedbackAt) {
+        return {
+          ok: false,
+          status: 400,
+          message: 'Feedback window expired. Feedback must be submitted within 14 days after the meeting.',
+        };
+      }
+
+      return { ok: true, status: 200, message: 'valid' };
+    };
 
     // Find the meeting in both mentor and mentee containers
     let requester: any = null;
@@ -35,18 +69,42 @@ export async function POST(req: NextRequest) {
           requester = menteeResource;
           requesterContainer = menteeContainer;
 
+          const meeting = menteeResource.scheduling[meetingIndex];
+          const validation = validateFeedbackWindow(meeting);
+          if (!validation.ok) {
+            return NextResponse.json({ message: validation.message }, { status: validation.status });
+          }
+
+          if (meeting.feedbackFormSent === true) {
+            return NextResponse.json(
+              {
+                message: 'Feedback already submitted for this meeting',
+                tokenReplenished: false,
+                newTokenBalance: requester?.tokens || 0,
+                alreadySubmitted: true,
+              },
+              { status: 200 }
+            );
+          }
+
           // Update feedback in mentee container
+          const submittedAt = new Date().toISOString();
           const feedbackData = {
             rating: rating || null,
             feedback: feedback || '',
-            submittedAt: new Date().toISOString(),
+            submittedAt,
           };
 
           menteeResource.scheduling[meetingIndex].feedback_form = feedbackData;
+          menteeResource.scheduling[meetingIndex].feedbackFormSent = true;
+          menteeResource.scheduling[meetingIndex].feedbackFormSentAt = submittedAt;
+          if (menteeResource.token_cycle?.status === 'pending' && menteeResource.token_cycle.meetingId === meetingId) {
+            menteeResource.token_cycle.feedbackSubmittedAt = submittedAt;
+            menteeResource.token_cycle.feedbackValid = true;
+          }
           await menteeContainer.item(menteeId, menteeId).replace(menteeResource);
 
           // Also update mentor's copy
-          const meeting = menteeResource.scheduling[meetingIndex];
           const mentorId = meeting.mentorUID;
 
           const mentorQuerySpec = {
@@ -66,7 +124,9 @@ export async function POST(req: NextRequest) {
 
             if (mentorMeetingIndex !== -1) {
               mentor.scheduling[mentorMeetingIndex].feedback_form = feedbackData;
-              await mentorContainer.item(mentor.id, mentor.mentorUID).replace(mentor);
+              mentor.scheduling[mentorMeetingIndex].feedbackFormSent = true;
+              mentor.scheduling[mentorMeetingIndex].feedbackFormSentAt = submittedAt;
+              await mentorContainer.item(mentor.id, mentor.id).replace(mentor);
             }
           }
         }
@@ -95,20 +155,44 @@ export async function POST(req: NextRequest) {
             requesterContainer = mentorContainer;
             isRequesterMentor = true;
 
+            const meeting = mentorRequester.scheduling[meetingIndex];
+            const validation = validateFeedbackWindow(meeting);
+            if (!validation.ok) {
+              return NextResponse.json({ message: validation.message }, { status: validation.status });
+            }
+
+            if (meeting.feedbackFormSent === true) {
+              return NextResponse.json(
+                {
+                  message: 'Feedback already submitted for this meeting',
+                  tokenReplenished: false,
+                  newTokenBalance: requester?.tokens || 0,
+                  alreadySubmitted: true,
+                },
+                { status: 200 }
+              );
+            }
+
             // Update feedback
+            const submittedAt = new Date().toISOString();
             const feedbackData = {
               rating: rating || null,
               feedback: feedback || '',
-              submittedAt: new Date().toISOString(),
+              submittedAt,
             };
 
             mentorRequester.scheduling[meetingIndex].feedback_form = feedbackData;
+            mentorRequester.scheduling[meetingIndex].feedbackFormSent = true;
+            mentorRequester.scheduling[meetingIndex].feedbackFormSentAt = submittedAt;
+            if (mentorRequester.token_cycle?.status === 'pending' && mentorRequester.token_cycle.meetingId === meetingId) {
+              mentorRequester.token_cycle.feedbackSubmittedAt = submittedAt;
+              mentorRequester.token_cycle.feedbackValid = true;
+            }
             await mentorContainer
-              .item(mentorRequester.id, mentorRequester.mentorUID)
+              .item(mentorRequester.id, mentorRequester.id)
               .replace(mentorRequester);
 
             // Also update the target mentor's copy
-            const meeting = mentorRequester.scheduling[meetingIndex];
             const targetMentorId = meeting.mentorUID;
 
             if (targetMentorId !== mentorRequester.mentorUID) {
@@ -129,8 +213,10 @@ export async function POST(req: NextRequest) {
 
                 if (targetMeetingIndex !== -1) {
                   targetMentor.scheduling[targetMeetingIndex].feedback_form = feedbackData;
+                  targetMentor.scheduling[targetMeetingIndex].feedbackFormSent = true;
+                  targetMentor.scheduling[targetMeetingIndex].feedbackFormSentAt = submittedAt;
                   await mentorContainer
-                    .item(targetMentor.id, targetMentor.mentorUID)
+                    .item(targetMentor.id, targetMentor.id)
                     .replace(targetMentor);
                 }
               }
@@ -144,26 +230,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Meeting not found' }, { status: 404 });
     }
 
-    // Replenish token to requester
-    if (requester) {
-      const currentTokens = requester.tokens || 0;
-      requester.tokens = currentTokens + 1;
-
-      if (isRequesterMentor) {
-        await mentorContainer.item(requester.id, requester.mentorUID).replace(requester);
-      } else {
-        await menteeContainer.item(requester.id, requester.id).replace(requester);
-      }
-
-      console.log(
-        `💰 Replenished 1 token to requester after feedback. New balance: ${requester.tokens}`
-      );
-    }
-
     return NextResponse.json({
       message: 'Feedback submitted successfully',
-      tokenReplenished: true,
+      tokenReplenished: false,
       newTokenBalance: requester?.tokens || 0,
+      tokenReplenishAt: getTokenCycleEvaluateAtIso(requester?.token_cycle?.tokenUsedAt),
     });
   } catch (error) {
     console.error('Failed to submit feedback:', error);

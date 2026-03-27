@@ -174,9 +174,12 @@ export default function MenteeDashboardPage() {
             variant: "destructive"
           });
         } else {
+          const replenishAtText = data.tokenReplenishAt
+            ? new Date(data.tokenReplenishAt).toLocaleString()
+            : 'the cycle evaluation time';
           toast({
             title: "Feedback Form Opened",
-            description: `Token replenished! New balance: ${data.newTokenBalance} tokens`,
+            description: `Token will be replenished after ${replenishAtText} if eligible.`,
           });
         }
         

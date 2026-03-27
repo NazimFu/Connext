@@ -84,6 +84,14 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
     return <>{children}</>;
   }
 
+  const tokenCycleStatus = user?.token_cycle?.status;
+  const pendingReplenishText =
+    tokenCycleStatus === 'pending'
+      ? (user?.tokenReplenishAt
+          ? new Date(user.tokenReplenishAt).toLocaleString()
+          : 'soon')
+      : null;
+
   return (
     <div className="min-h-screen flex w-full bg-gradient-to-br from-white via-yellow-50/30 to-amber-50/40">
       <style jsx global>{`
@@ -186,10 +194,17 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
                     <div className="flex flex-col items-center justify-center bg-gradient-to-br from-gray-100 via-yellow-50 to-amber-100 rounded-xl px-4 py-2 shadow text-gray-900 border border-yellow-200 hover:border-yellow-400 transition-all duration-200 cursor-pointer">
                       <span className="font-extrabold text-lg tracking-tight drop-shadow-sm">{user.tokens ?? 0}</span>
                       <span className="text-base font-bold text-amber-700">Tokens</span>
+                      {tokenCycleStatus === 'pending' && (
+                        <span className="mt-1 text-[11px] font-medium text-amber-700 text-center">
+                          Cycle pending until {pendingReplenishText}
+                        </span>
+                      )}
                     </div>
                     {/* Tooltip */}
                     <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-max px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
-                      This token is for meeting requests
+                      {tokenCycleStatus === 'pending'
+                        ? `Active cycle pending. Evaluates at ${pendingReplenishText}.`
+                        : 'This token is for meeting requests'}
                     </div>
                   </div>
                   <Button
@@ -212,7 +227,9 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
                     </div>
                     {/* Tooltip */}
                     <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-max px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
-                      This token is for meeting requests
+                      {tokenCycleStatus === 'pending'
+                        ? `Active cycle pending. Evaluates at ${pendingReplenishText}.`
+                        : 'This token is for meeting requests'}
                     </div>
                   </div>
                   <button

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { User } from '@/lib/types';
+import { clampToken, evaluateTokenCycleForUser, getTokenCycleEvaluateAtIso } from '@/lib/token-cycle';
 
 export async function POST(request: Request) {
   try {
@@ -30,6 +31,10 @@ export async function POST(request: Request) {
     }
 
     const mentor = mentors[0];
+    const evalResult = evaluateTokenCycleForUser(mentor);
+    if (evalResult.changed) {
+      await mentorContainer.item(mentor.id, mentor.id).replace(mentor);
+    }
     
     // Convert mentor document to User format
     const user: User = {
@@ -40,7 +45,9 @@ export async function POST(request: Request) {
       role: 'mentor',
       verified: mentor.verified ?? false,
       verificationStatus: mentor.verificationStatus ?? 'not-submitted',
-      tokens: mentor.tokens ?? 3 // Mentors can request other mentors as mentees
+      tokens: clampToken(mentor.tokens),
+      token_cycle: mentor.token_cycle,
+      tokenReplenishAt: getTokenCycleEvaluateAtIso(mentor.token_cycle?.tokenUsedAt),
     };
 
     return NextResponse.json(user);

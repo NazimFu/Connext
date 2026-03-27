@@ -113,7 +113,7 @@ export default function MeetingRequestsPage() {
       // Filter out cancelled meetings and add userRole flag
       const filteredMentorRequests = mentorRequests
         .filter((req: MeetingRequest) => {
-          const isValid = req.scheduled_status !== 'cancelled' && req.mentorUID === user.id;
+          const isValid = req.scheduled_status !== 'cancelled';
           console.log(`Mentor request ${req.meetingId}: mentorUID=${req.mentorUID}, userID=${user.id}, valid=${isValid}`);
           return isValid;
         })
@@ -124,7 +124,7 @@ export default function MeetingRequestsPage() {
 
       const filteredMenteeRequests = menteeRequests
         .filter((req: MeetingRequest) => {
-          const isValid = req.scheduled_status !== 'cancelled' && req.mentorUID !== user.id;
+          const isValid = req.scheduled_status !== 'cancelled';
           console.log(`Mentee request ${req.meetingId}: mentorUID=${req.mentorUID}, userID=${user.id}, valid=${isValid}`);
           return isValid;
         })
@@ -597,7 +597,7 @@ export default function MeetingRequestsPage() {
                   const timeUntil = formatDistance(meetingDateTime, now, { addSuffix: true });
                   
                   // **NEW: Determine if user is mentor or mentee in this meeting**
-                  const userIsMentor = req.mentorUID === user.id;
+                  const userIsMentor = req.userRole === 'mentor';
                   const displayName = userIsMentor ? req.mentee_name : req.mentor_name;
                   const displayEmail = userIsMentor ? req.mentee_email : req.mentor_email;
                   const displayLabel = userIsMentor ? 'Mentee' : 'Mentor';
@@ -693,7 +693,7 @@ export default function MeetingRequestsPage() {
               {pastMeetings.length > 0 ? (
                 pastMeetings.map((req) => {
                   // **NEW: Determine if user is mentor or mentee**
-                  const userIsMentor = req.mentorUID === user.id;
+                  const userIsMentor = req.userRole === 'mentor';
                   const displayName = userIsMentor ? req.mentee_name : req.mentor_name;
                   const displayEmail = userIsMentor ? req.mentee_email : req.mentor_email;
                   const displayLabel = userIsMentor ? 'Mentee' : 'Mentor';

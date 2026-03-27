@@ -93,6 +93,24 @@ export async function sendEmail({
       `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
     ),
 
+    'mentee-meeting-no-response': (data) => getEmailWrapper(
+      `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">⏳ No Mentor Response</h2>`,
+      `
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.menteeName || 'there'}</strong>,</p>
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Sadly, we did not receive a response from <strong>${data.mentorName}</strong> in time.</p>
+
+        <div style="background: linear-gradient(135deg, #fef3c7 0%, #fef08a 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #f59e0b;">
+          <h3 style="margin: 0 0 16px 0; color: #92400e; font-size: 16px;">📅 Request Details:</h3>
+          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName}</p>
+        </div>
+
+        <p style="font-size: 14px; color: #6b7280; margin-top: 24px;">💰 Your token has been returned to you. No fret, you can still request a mentor again.</p>
+      `,
+      `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
+    ),
+
     'meeting-cancelled-by-mentor': (data) => getEmailWrapper(
       `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">⚠️ Meeting Cancelled</h2>`,
       `

@@ -49,7 +49,7 @@ export async function POST(request: Request) {
         linkedin: linkedin || '',
         github: github || '',
         scheduling: [],
-        tokens: 3,
+        tokens: 1,
         mentee_id: menteeId,
         createdAt: new Date().toISOString()
       };
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
         role: 'mentor',
         verified: true,
         verificationStatus: 'approved',
-        tokens: 3,
+        tokens: 1,
         mentee_id: menteeId
       };
 
@@ -120,7 +120,7 @@ export async function POST(request: Request) {
         role: 'mentee',
         verified: false,
         verificationStatus: 'not-submitted',
-        tokens: 3,
+        tokens: 1,
         createdAt: new Date().toISOString()
       };
 
