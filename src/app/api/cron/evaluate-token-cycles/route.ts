@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { evaluateTokenCycleForUser } from '@/lib/token-cycle';
+import { sendEmail } from '@/lib/email';
 
 export async function GET(req: NextRequest) {
   try {
@@ -25,6 +26,7 @@ export async function GET(req: NextRequest) {
         .fetchAll();
 
       for (const user of users) {
+        const cycleBefore = user.token_cycle;
         const result = evaluateTokenCycleForUser(user);
         if (!result.changed) {
           continue;
@@ -37,6 +39,36 @@ export async function GET(req: NextRequest) {
           replenishedCount += 1;
         } else {
           forfeitedCount += 1;
+
+          // Notify requester when a reported cycle reaches evaluation and is forfeited.
+          const wasMentorReported = cycleBefore?.mentorReported === true;
+          if (wasMentorReported) {
+            const recipientEmail = user.mentee_email || user.mentor_email || user.email;
+            const recipientName = user.mentee_name || user.mentor_name || user.name || 'there';
+
+            const meetingId = cycleBefore?.meetingId;
+            const meeting = Array.isArray(user.scheduling)
+              ? user.scheduling.find((m: any) => m.meetingId === meetingId)
+              : null;
+
+            if (recipientEmail) {
+              try {
+                await sendEmail({
+                  to: recipientEmail,
+                  subject: 'Meeting report outcome applied',
+                  template: 'mentee-reported-cycle-result',
+                  data: {
+                    menteeName: recipientName,
+                    date: cycleBefore?.meetingDate || meeting?.date || null,
+                    time: cycleBefore?.meetingTime || meeting?.time || null,
+                    mentorName: meeting?.mentor_name || 'Your mentor',
+                  },
+                });
+              } catch (emailError) {
+                console.error('Failed to send reported-cycle email:', emailError);
+              }
+            }
+          }
         }
       }
     };

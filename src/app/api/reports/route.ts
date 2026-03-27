@@ -3,6 +3,8 @@ import { database } from '@/lib/cosmos';
 import { PatchOperation } from '@azure/cosmos';
 import type { Mentor, Mentee, Scheduling } from '@/lib/types';
 import { locateMeeting, findScheduleIndex } from '@/lib/server/meeting-utils';
+import { sendEmail } from '@/lib/email';
+import { clampToken } from '@/lib/token-cycle';
 
 type ReportStatus = 'pending' | 'resolved' | 'rejected';
 
@@ -155,7 +157,7 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    const { meetingId, reportType, status, reviewerName, reviewNotes } = await request.json();
+    const { meetingId, reportType, status, reviewerName, reviewNotes, actionReason } = await request.json();
 
     if (!meetingId || typeof meetingId !== 'string') {
       return NextResponse.json({ message: 'Meeting ID is required' }, { status: 400 });
@@ -172,10 +174,18 @@ export async function PATCH(request: Request) {
     const normalizedStatus = status as ReportStatus;
     const reviewer = typeof reviewerName === 'string' ? reviewerName.trim() : '';
     const notes = typeof reviewNotes === 'string' ? reviewNotes.trim() : '';
+    const selectedReason = typeof actionReason === 'string' ? actionReason.trim() : '';
 
     if ((normalizedStatus === 'resolved' || normalizedStatus === 'rejected') && !reviewer) {
       return NextResponse.json(
         { message: 'Reviewer name is required to resolve or reject a report' },
+        { status: 400 }
+      );
+    }
+
+    if (reportType === 'mentor_report' && normalizedStatus === 'resolved' && !selectedReason) {
+      return NextResponse.json(
+        { message: 'Action reason is required when approving a mentor report' },
         { status: 400 }
       );
     }
@@ -256,7 +266,68 @@ export async function PATCH(request: Request) {
       }
     }
 
-    // Token changes are handled only by the 30-day cycle evaluator.
+    // If a mentor-filed report is rejected by admin, do not refund immediately.
+    // Clear report penalty and let token return happen at normal cycle evaluation time.
+    if (reportType === 'mentor_report' && normalizedStatus === 'rejected' && mentee) {
+      const requester: any = mentee as any;
+
+      if (requester.token_cycle?.meetingId === meetingId) {
+        requester.token_cycle.mentorReported = false;
+        requester.token_cycle.reportRecordedAt = null;
+      }
+
+      if (menteeIsInMentorContainer) {
+        await mentorContainer.item(requester.id, requester.id).replace(requester);
+      } else {
+        await menteeContainer.item(requester.id, requester.id).replace(requester);
+      }
+    }
+
+    // Approving mentor report applies immediate penalty and sends immediate email.
+    if (reportType === 'mentor_report' && normalizedStatus === 'resolved' && mentee) {
+      const requester: any = mentee as any;
+
+      // Immediate cycle end with forfeiture for this meeting.
+      requester.tokens = 0;
+      if (requester.token_cycle?.meetingId === meetingId) {
+        requester.token_cycle.mentorReported = true;
+        requester.token_cycle.reportRecordedAt = resolvedTimestamp;
+        requester.token_cycle.status = 'forfeited';
+        requester.token_cycle.evaluatedAt = resolvedTimestamp;
+      }
+      requester.tokens = clampToken(requester.tokens);
+
+      if (menteeIsInMentorContainer) {
+        await mentorContainer.item(requester.id, requester.id).replace(requester);
+      } else {
+        await menteeContainer.item(requester.id, requester.id).replace(requester);
+      }
+
+      const recipientEmail = requester.mentee_email || requester.mentor_email || requester.email;
+      const recipientName = requester.mentee_name || requester.mentor_name || requester.name || 'there';
+
+      if (recipientEmail) {
+        try {
+          await sendEmail({
+            to: recipientEmail,
+            subject: 'Report approved - penalty applied',
+            template: 'mentee-report-approved-penalty',
+            data: {
+              menteeName: recipientName,
+              reason: selectedReason,
+              adminNotes: notes || null,
+              date: meeting?.date || null,
+              time: meeting?.time || null,
+              mentorName: meeting?.mentor_name || mentor?.mentor_name || 'Your mentor',
+            },
+          });
+        } catch (emailError) {
+          console.error('Failed to send report approved email:', emailError);
+        }
+      }
+    }
+
+    // Rejected mentor reports are deferred to cycle evaluation; approved mentor reports apply immediate forfeiture.
 
     return NextResponse.json({
       success: true,

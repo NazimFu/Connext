@@ -111,6 +111,44 @@ export async function sendEmail({
       `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
     ),
 
+    'mentee-reported-cycle-result': (data) => getEmailWrapper(
+      `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">⚠️ Report Outcome Update</h2>`,
+      `
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.menteeName || 'there'}</strong>,</p>
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Your meeting cycle has been evaluated and a report was recorded for this session.</p>
+
+        <div style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #ef4444;">
+          <h3 style="margin: 0 0 16px 0; color: #991b1b; font-size: 16px;">📅 Meeting Details:</h3>
+          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date || 'N/A'}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time || 'N/A'}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName || 'N/A'}</p>
+        </div>
+
+        <p style="font-size: 14px; color: #6b7280; margin-top: 24px;">A report outcome has been applied for this cycle. If you believe this was in error, please contact support.</p>
+      `,
+      `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
+    ),
+
+    'mentee-report-approved-penalty': (data) => getEmailWrapper(
+      `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">⚠️ Report Approved</h2>`,
+      `
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.menteeName || 'there'}</strong>,</p>
+        <p style="font-size: 16px; margin: 0 0 24px 0;">A report for your meeting has been reviewed and approved by admin.</p>
+
+        <div style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #ef4444;">
+          <h3 style="margin: 0 0 16px 0; color: #991b1b; font-size: 16px;">📋 Action Taken:</h3>
+          <p style="margin: 8px 0; color: #374151;"><strong>Reason:</strong> ${data.reason || 'Policy violation'}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date || 'N/A'}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time || 'N/A'}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName || 'N/A'}</p>
+          ${data.adminNotes ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Admin Notes:</strong> ${data.adminNotes}</p>` : ''}
+        </div>
+
+        <p style="font-size: 14px; color: #6b7280; margin-top: 24px;">As a penalty, your token will not be returned for this cycle.</p>
+      `,
+      `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
+    ),
+
     'meeting-cancelled-by-mentor': (data) => getEmailWrapper(
       `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">⚠️ Meeting Cancelled</h2>`,
       `

@@ -492,14 +492,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ me
       let meeting: any = null;
       let mentorIndex = -1;
 
+      // A meeting can exist in multiple mentor documents when requester is a mentor-as-mentee.
+      // Always select the TARGET mentor document (meeting.mentorUID matches document mentorUID/id).
+      const candidates: Array<{ doc: any; idx: number; row: any }> = [];
       for (const m of mentors) {
         const idx = m.scheduling?.findIndex((s: any) => s.meetingId === meetingID);
         if (idx >= 0) {
-          mentorDoc = m;
-          mentorIndex = idx;
-          meeting = m.scheduling[idx];
-          break;
+          candidates.push({ doc: m, idx, row: m.scheduling[idx] });
         }
+      }
+
+      const best = candidates.find((c) => c.row?.mentorUID === c.doc?.mentorUID || c.row?.mentorUID === c.doc?.id)
+        || candidates[0];
+
+      if (best) {
+        mentorDoc = best.doc;
+        mentorIndex = best.idx;
+        meeting = best.row;
       }
 
       if (!meeting) {

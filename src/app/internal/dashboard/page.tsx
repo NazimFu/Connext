@@ -61,6 +61,15 @@ interface TokenStatus {
   auth_url: string; message?: string;
 }
 
+const REPORT_REASON_OPTIONS = [
+  "Inappropriate behavior",
+  "Didn't show up",
+  "Harassment or abusive language",
+  "Spam or misuse of meeting",
+  "Policy violation",
+  "Custom",
+] as const;
+
 /* ─────────────────────────────── STAT CARD ─────────────────────────── */
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
@@ -148,6 +157,8 @@ export default function InternalDashboard() {
   }>({ open: false, report: null, action: "accept" });
   const [reportReviewer, setReportReviewer] = useState("");
   const [reportNotes, setReportNotes] = useState("");
+  const [reportActionReason, setReportActionReason] = useState<string>("Inappropriate behavior");
+  const [reportActionReasonCustom, setReportActionReasonCustom] = useState("");
   const [reportUpdating, setReportUpdating] = useState(false);
 
   // Cancellations
@@ -237,6 +248,11 @@ export default function InternalDashboard() {
   const handleUpdateReport = async () => {
     if (!reportDialog.report) return;
     if (reportDialog.action !== "reopen" && !reportReviewer.trim()) { alert("Please provide your name."); return; }
+    const selectedReason = reportActionReason === "Custom" ? reportActionReasonCustom.trim() : reportActionReason;
+    if (reportDialog.action === "accept" && !selectedReason) {
+      alert("Please select a reason or enter a custom reason.");
+      return;
+    }
     setReportUpdating(true);
     try {
       await fetch("/api/reports", {
@@ -247,10 +263,13 @@ export default function InternalDashboard() {
           status: reportDialog.action === "accept" ? "resolved" : reportDialog.action === "reject" ? "rejected" : "pending",
           reviewerName: reportDialog.action !== "reopen" ? reportReviewer.trim() : undefined,
           reviewNotes: reportNotes,
+          actionReason: reportDialog.action === "accept" ? selectedReason : undefined,
         }),
       });
       setReportDialog({ open: false, report: null, action: "accept" });
       setReportReviewer(""); setReportNotes("");
+      setReportActionReason("Inappropriate behavior");
+      setReportActionReasonCustom("");
       const data = await fetch("/api/reports").then(r => r.json());
       setReports(data ?? []);
     } catch { alert("Error updating report."); }
@@ -499,9 +518,9 @@ export default function InternalDashboard() {
                 <div className="space-y-3">
                   {filteredReports.map(r => (
                     <ReportCard key={`${r.meetingId}-${r.reportType}`} report={r} fmtDate={fmtDateShort}
-                      onAccept={() => { setReportDialog({ open: true, report: r, action: "accept" }); setReportReviewer(""); setReportNotes(""); }}
-                      onReject={() => { setReportDialog({ open: true, report: r, action: "reject" }); setReportReviewer(""); setReportNotes(""); }}
-                      onReopen={() => { setReportDialog({ open: true, report: r, action: "reopen" }); setReportReviewer(""); setReportNotes(""); }} />
+                      onAccept={() => { setReportDialog({ open: true, report: r, action: "accept" }); setReportReviewer(""); setReportNotes(""); setReportActionReason("Inappropriate behavior"); setReportActionReasonCustom(""); }}
+                      onReject={() => { setReportDialog({ open: true, report: r, action: "reject" }); setReportReviewer(""); setReportNotes(""); setReportActionReason("Inappropriate behavior"); setReportActionReasonCustom(""); }}
+                      onReopen={() => { setReportDialog({ open: true, report: r, action: "reopen" }); setReportReviewer(""); setReportNotes(""); setReportActionReason("Inappropriate behavior"); setReportActionReasonCustom(""); }} />
                   ))}
                 </div>
               )}
@@ -653,7 +672,7 @@ export default function InternalDashboard() {
               {reportDialog.action === "accept" ? "Accept Report" : reportDialog.action === "reject" ? "Reject Report" : "Reopen Report"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {reportDialog.action === "accept" ? "Accepting will deduct 1 token from the reported mentee." : reportDialog.action === "reject" ? "No penalty will be applied." : "Reopen for further review."}
+              {reportDialog.action === "accept" ? "Accepting will immediately forfeit the cycle token and send an email notification." : reportDialog.action === "reject" ? "No penalty will be applied." : "Reopen for further review."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-3 space-y-3">
@@ -661,6 +680,29 @@ export default function InternalDashboard() {
               <div>
                 <Label>Reviewer Name <span className="text-red-500">*</span></Label>
                 <Input value={reportReviewer} onChange={e => setReportReviewer(e.target.value)} placeholder="Your name" className="mt-1.5" />
+              </div>
+            )}
+            {reportDialog.action === "accept" && (
+              <div>
+                <Label>Reason To Include In Email <span className="text-red-500">*</span></Label>
+                <select
+                  value={reportActionReason}
+                  onChange={(e) => setReportActionReason(e.target.value)}
+                  className="mt-1.5 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                >
+                  {REPORT_REASON_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+                {reportActionReason === "Custom" && (
+                  <Input
+                    value={reportActionReasonCustom}
+                    onChange={e => setReportActionReasonCustom(e.target.value)}
+                    placeholder="Type custom reason"
+                    className="mt-2"
+                  />
+                )}
+                <p className="text-xs text-gray-400 mt-1">The selected reason will be sent to the reported user.</p>
               </div>
             )}
             <div>
