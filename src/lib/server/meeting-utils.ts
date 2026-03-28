@@ -39,6 +39,11 @@ export async function locateMeeting(meetingId: string): Promise<MeetingLookupRes
   let meeting: Scheduling | null = null;
   let menteeIsInMentorContainer = false; // Track which container the mentee/requester is in
 
+  const findMeetingIndexInDoc = (scheduling: Scheduling[] | undefined): number => {
+    if (!Array.isArray(scheduling)) return -1;
+    return scheduling.findIndex((s) => s.meetingId === trimmedId);
+  };
+
   try {
     const mentorQuery = {
       query: 'SELECT * FROM c WHERE EXISTS (SELECT VALUE s FROM s IN c.scheduling WHERE s.meetingId = @meetingId)',
@@ -52,7 +57,15 @@ export async function locateMeeting(meetingId: string): Promise<MeetingLookupRes
     console.log('📊 Mentor query results:', mentorDocs.length, 'documents found');
 
     if (mentorDocs.length > 0) {
-      mentor = mentorDocs[0];
+      // Prefer the true meeting owner doc: schedule mentorUID should match document mentorUID.
+      const ownerMentorDoc = mentorDocs.find((doc) => {
+        const idx = findMeetingIndexInDoc(doc.scheduling);
+        if (idx < 0) return false;
+        const entry = doc.scheduling?.[idx];
+        return Boolean(entry?.mentorUID) && entry?.mentorUID === (doc as any).mentorUID;
+      });
+
+      mentor = ownerMentorDoc ?? mentorDocs[0];
       mentorScheduleIndex = findScheduleIndex(mentor.scheduling, trimmedId);
       meeting = mentor.scheduling?.[mentorScheduleIndex] ?? null;
       console.log('✅ Found meeting in mentor container:', {
@@ -75,7 +88,15 @@ export async function locateMeeting(meetingId: string): Promise<MeetingLookupRes
       console.log('📊 Mentee query results:', menteeDocs.length, 'documents found');
 
       if (menteeDocs.length > 0) {
-        mentee = menteeDocs[0];
+        // Prefer the true requester doc: schedule menteeUID should match document menteeUID.
+        const ownerMenteeDoc = menteeDocs.find((doc) => {
+          const idx = findMeetingIndexInDoc(doc.scheduling);
+          if (idx < 0) return false;
+          const entry = doc.scheduling?.[idx];
+          return Boolean(entry?.menteeUID) && entry?.menteeUID === (doc as any).menteeUID;
+        });
+
+        mentee = ownerMenteeDoc ?? menteeDocs[0];
         menteeScheduleIndex = findScheduleIndex(mentee.scheduling, trimmedId);
         meeting = mentee.scheduling?.[menteeScheduleIndex] ?? null;
         console.log('✅ Found meeting in mentee container:', {

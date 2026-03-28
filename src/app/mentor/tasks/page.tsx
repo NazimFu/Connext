@@ -72,6 +72,8 @@ interface TaskItem {
     reason: string | null;
     filedAt: string | null;
   } | null;
+  reportStatus?: string;
+  reportReviewedAt?: string | null;
   userRole?: 'mentor' | 'mentee';
   feedbackFormUrl?: string;
   feedbackFormSent?: boolean;
@@ -320,6 +322,8 @@ export default function MentorTasksPage() {
             mentorUID: request.mentorUID,
             message: request.message,
             mentorReport: request.mentor_report,
+            reportStatus: request.report_status,
+            reportReviewedAt: request.report_reviewed_at ?? null,
             feedbackFormUrl: request.feedbackFormUrl,
             feedbackFormSent: request.feedbackFormSent,
             // **NEW: Add flag to identify user's role**
@@ -1090,9 +1094,12 @@ export default function MentorTasksPage() {
               <div className="bg-white rounded-xl shadow-lg p-6 sm:p-8">
                 <AnimatePresence mode="popLayout">
                   {tasks.map((task, index) => {
-                    const mentorReportStatus = task.userRole === 'mentor' ? task.mentorReport?.status : undefined;
-                    const myReportPending = mentorReportStatus === 'pending';
+                    const mentorReportStatus = task.userRole === 'mentor'
+                      ? (task.mentorReport?.status ?? task.reportStatus)
+                      : undefined;
+                    const myReportPending = mentorReportStatus === 'pending' && !task.reportReviewedAt;
                     const myReportResolved = mentorReportStatus === 'resolved';
+                    const myReportRejected = mentorReportStatus === 'rejected';
                     const dateInfo = getDateDisplay(task.date);
                     const fullDateTime = getFullDateTime(task.date, task.time);
                     const isLastItem = index === tasks.length - 1;
@@ -1217,7 +1224,7 @@ export default function MentorTasksPage() {
                                 </div>
 
                                 {/* Enhanced Report Badges */}
-                                {(myReportPending || myReportResolved) && (
+                                {(myReportPending || myReportResolved || myReportRejected) && (
                                   <div className="flex flex-wrap gap-2 pt-4 mt-4 border-t-2 border-gray-400">
                                     {myReportPending && (
                                       <Badge variant="outline" className="border-2 border-yellow-400 text-yellow-700 text-xs font-semibold px-3 py-1 bg-yellow-50">
@@ -1229,6 +1236,12 @@ export default function MentorTasksPage() {
                                       <Badge variant="outline" className="border-2 border-green-400 text-green-700 text-xs font-semibold px-3 py-1 bg-green-50">
                                         <CheckSquare className="w-3.5 h-3.5 mr-1.5" />
                                         Report Resolved
+                                      </Badge>
+                                    )}
+                                    {myReportRejected && (
+                                      <Badge variant="outline" className="border-2 border-red-400 text-red-700 text-xs font-semibold px-3 py-1 bg-red-50">
+                                        <XCircle className="w-3.5 h-3.5 mr-1.5" />
+                                        Report Rejected
                                       </Badge>
                                     )}
                                   </div>

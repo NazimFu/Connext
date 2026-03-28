@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
         .fetchAll();
 
       if (mentors.length > 0) {
-        const mentor = mentors[0];
+        const mentor = mentors.find((m: any) => m.id === mentorId) ?? mentors.find((m: any) => m.mentorUID === mentorId) ?? mentors[0];
         if (mentor.scheduling && Array.isArray(mentor.scheduling)) {
           mentor.scheduling.forEach((meeting: any) => {
             // Inbox view should show all non-cancelled meetings this mentor is receiving.
@@ -146,7 +146,7 @@ export async function GET(req: NextRequest) {
 
       if (requesterMentors.length > 0) {
         // This is a mentor acting as mentee
-        const requesterMentor = requesterMentors[0];
+        const requesterMentor = requesterMentors.find((m: any) => m.id === menteeId) ?? requesterMentors.find((m: any) => m.mentorUID === menteeId) ?? requesterMentors[0];
         const actualMenteeId = requesterMentor.mentee_id;
 
         const evalResult = evaluateTokenCycleForUser(requesterMentor);

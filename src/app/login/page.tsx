@@ -118,7 +118,6 @@ export default function LoginPage() {
             description: "Your account is under review. You will be notified once approved.",
             variant: "default",
           });
-          router.push('/mentee/verification-pending');
           setLoading(false);
           return;
         }
@@ -183,11 +182,8 @@ export default function LoginPage() {
         description: `Welcome back!`,
       });
 
-      // Redirect based on role
-      const dashboardPath = role === 'mentee' ? '/mentee/mentor-listing' :
-                          role === 'mentor' ? '/mentor/mentor-listing' :
-                          role === 'staff' ? '/staff/dashboard' : '/';
-      router.push(dashboardPath);
+      setLoading(false);
+      // Let the useEffect handle routing once user context is populated
     } catch (error: any) {
       console.error("Login error:", error);
       
@@ -216,9 +212,8 @@ export default function LoginPage() {
         default:
           setError(`Login failed: ${error.message || error.toString() || 'Unknown error'}`);
       }
-    } finally {
       setLoading(false);
-    } 
+    }
   };
 
   // Wait for user context to be set, then redirect
