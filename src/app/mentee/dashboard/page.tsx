@@ -153,43 +153,12 @@ export default function MenteeDashboardPage() {
 
   const handleOpenFeedbackForm = async (meeting: MeetingRequest) => {
     const formUrl = generateFeedbackFormUrl(meeting);
-    
-    // Mark feedback as submitted and replenish token (only once)
-    try {
-      const response = await fetch('/api/meetings/submit-feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          meetingId: meeting.meetingId,
-          menteeId: user?.id
-        })
-      });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.alreadySubmitted) {
-          toast({
-            title: "Already Submitted",
-            description: "Feedback for this meeting was already submitted.",
-            variant: "destructive"
-          });
-        } else {
-          const replenishAtText = data.tokenReplenishAt
-            ? new Date(data.tokenReplenishAt).toLocaleString()
-            : 'the cycle evaluation time';
-          toast({
-            title: "Feedback Form Opened",
-            description: `Token will be replenished after ${replenishAtText} if eligible.`,
-          });
-        }
-        
-        // Refresh to update status
-        await fetchMeetingRequests();
-      }
-    } catch (error) {
-      console.error('Failed to submit feedback:', error);
-    }
-    
+    toast({
+      title: "Feedback Form Opened",
+      description: "The button will disappear only after you submit the Google Form.",
+    });
+
     // Open the form
     window.open(formUrl, '_blank');
   };

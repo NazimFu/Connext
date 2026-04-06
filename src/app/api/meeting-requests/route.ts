@@ -97,6 +97,10 @@ export async function GET(req: NextRequest) {
       }
       return meeting?.decision;
     };
+    const isCancelledMeeting = (meeting: any) => {
+      const status = String(meeting?.scheduled_status || '').trim().toLowerCase();
+      return status === 'cancelled' || status === 'canceled';
+    };
     let allMeetings: any[] = [];
 
     // Query by mentorId (user is RECEIVING requests as a mentor)
@@ -117,7 +121,7 @@ export async function GET(req: NextRequest) {
             // Inbox view should show all non-cancelled meetings this mentor is receiving.
             // Exclude self-requested meetings by matching mentor's own mentee_id.
             const isSelfRequestedMeeting = Boolean(mentor.mentee_id) && meeting.menteeUID === mentor.mentee_id;
-            if (meeting.scheduled_status !== 'cancelled' && !isSelfRequestedMeeting) {
+            if (!isCancelledMeeting(meeting) && !isSelfRequestedMeeting) {
               allMeetings.push({
                 ...meeting,
                 decision: normalizedDecision(meeting),
@@ -163,7 +167,7 @@ export async function GET(req: NextRequest) {
             // 1. This is NOT cancelled
             // 2. The menteeUID matches their mentee_id (they are the requester)
             // 3. The mentorUID is NOT them (they're requesting from someone else)
-            if (meeting.scheduled_status !== 'cancelled' && 
+            if (!isCancelledMeeting(meeting) && 
                 meeting.menteeUID === actualMenteeId &&
                 meeting.mentorUID !== menteeId) {
               allMeetings.push({
@@ -191,7 +195,7 @@ export async function GET(req: NextRequest) {
           
           if (mentee && mentee.scheduling && Array.isArray(mentee.scheduling)) {
             mentee.scheduling.forEach((meeting: any) => {
-              if (meeting.scheduled_status !== 'cancelled') {
+              if (!isCancelledMeeting(meeting)) {
                 allMeetings.push({
                   ...sanitizeForMenteeView(meeting),
                   decision: normalizedDecision(meeting),

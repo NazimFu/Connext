@@ -218,21 +218,30 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ m
     const mentorContainer = database.container('mentor');
     const menteeContainer = database.container('mentee');
 
-    // Find the meeting in mentor container
+    // Find the meeting in mentor container.
+    // A meeting can exist in multiple mentor docs when requester is mentor-as-mentee,
+    // so select the target mentor copy (meeting.mentorUID matches doc mentorUID/id).
     const { resources: mentors } = await mentorContainer.items.query(`SELECT * FROM c`).fetchAll();
-    
+
     let mentorDoc: any = null;
     let meeting: any = null;
     let mentorIndex = -1;
 
+    const candidates: Array<{ doc: any; idx: number; row: any }> = [];
     for (const m of mentors) {
       const idx = m.scheduling?.findIndex((s: any) => s.meetingId === meetingID);
       if (idx >= 0) {
-        mentorDoc = m;
-        mentorIndex = idx;
-        meeting = m.scheduling[idx];
-        break;
+        candidates.push({ doc: m, idx, row: m.scheduling[idx] });
       }
+    }
+
+    const best = candidates.find((c) => c.row?.mentorUID === c.doc?.mentorUID || c.row?.mentorUID === c.doc?.id)
+      || candidates[0];
+
+    if (best) {
+      mentorDoc = best.doc;
+      mentorIndex = best.idx;
+      meeting = best.row;
     }
 
     if (!meeting) {

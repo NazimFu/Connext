@@ -1149,40 +1149,11 @@ export default function MenteeNoticesPage() {
                       }
                       
                       if (formUrl) {
-                        // Mark feedback as submitted and replenish token (only once)
-                        try {
-                          const response = await fetch('/api/meetings/submit-feedback', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              meetingId: selectedTask.meetingId,
-                              menteeId: user?.id
-                            })
-                          });
-                          
-                          if (response.ok) {
-                            const data = await response.json();
-                            if (data.alreadySubmitted) {
-                              toast({
-                                title: "Already Submitted",
-                                description: "Feedback for this meeting was already submitted.",
-                                variant: "destructive"
-                              });
-                            } else {
-                              const replenishAtText = data.tokenReplenishAt
-                                ? new Date(data.tokenReplenishAt).toLocaleString()
-                                : 'the cycle evaluation time';
-                              toast({
-                                title: "Feedback Submitted",
-                                description: `Token will be replenished after ${replenishAtText} if eligible.`,
-                              });
-                            }
-                          }
-                        } catch (error) {
-                          console.error('Failed to submit feedback:', error);
-                        }
-                        
                         // Open form and close dialog
+                        toast({
+                          title: "Feedback Form Opened",
+                          description: "The button will disappear only after you submit the Google Form.",
+                        });
                         window.open(formUrl, '_blank');
                         setIsDialogOpen(false);
                         

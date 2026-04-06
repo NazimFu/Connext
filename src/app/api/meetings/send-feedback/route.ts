@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomUUID } from 'crypto';
 import { database } from '@/lib/cosmos';
 import { sendEmail } from '@/lib/email';
 import { generateFeedbackFormUrl } from '@/lib/googleForm';
@@ -45,8 +46,8 @@ export async function POST(request: NextRequest) {
             continue;
           }
 
-          // Skip if feedback form already sent
-          if (meeting.feedbackFormSent) {
+          // Skip if feedback form email was already sent
+          if (meeting.feedbackFormDelivered === true) {
             continue;
           }
 
@@ -61,12 +62,26 @@ export async function POST(request: NextRequest) {
 
           if (timeDifference <= thirtyMinutesInMs) {
             try {
+              const scheduleIndex = user.scheduling.findIndex(
+                (m: any) => m.meetingId === meeting.meetingId
+              );
+              if (scheduleIndex === -1) {
+                continue;
+              }
+
+              const existingToken = user.scheduling[scheduleIndex].feedbackTrackingToken;
+              const trackingToken =
+                typeof existingToken === 'string' && existingToken.trim().length > 0
+                  ? existingToken
+                  : randomUUID();
+
               // Generate pre-filled form URL
               const formUrl = generateFeedbackFormUrl({
                 menteeName: meeting.mentee_name,
                 mentorName: meeting.mentor_name,
                 sessionDate: meeting.date,
-                sessionTime: meeting.time
+                sessionTime: meeting.time,
+                trackingToken,
               });
 
               // Send email to mentee
@@ -88,15 +103,13 @@ export async function POST(request: NextRequest) {
                 }
               });
 
-              // Mark feedback form as sent in the database
-              const scheduleIndex = user.scheduling.findIndex(
-                (m: any) => m.meetingId === meeting.meetingId
-              );
-
+              // Mark feedback form email as delivered in the database.
+              // Submission is tracked separately through the verification webhook.
               if (scheduleIndex !== -1) {
-                user.scheduling[scheduleIndex].feedbackFormSent = true;
-                user.scheduling[scheduleIndex].feedbackFormSentAt = now.toISOString();
+                user.scheduling[scheduleIndex].feedbackFormDelivered = true;
+                user.scheduling[scheduleIndex].feedbackFormDeliveredAt = now.toISOString();
                 user.scheduling[scheduleIndex].feedbackFormUrl = formUrl; // Store the form URL
+                user.scheduling[scheduleIndex].feedbackTrackingToken = trackingToken;
                 
                 await container.item(user.id, user.id).replace(user);
               }

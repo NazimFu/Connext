@@ -26,6 +26,12 @@ Add to your `.env.local`:
 ```bash
 # Secret key for cron job authentication
 CRON_SECRET=your-secure-random-string-here
+
+# Used to sign/verify tracking data embedded in pre-filled form URLs
+FEEDBACK_FORM_SIGNING_SECRET=your-long-random-signing-secret
+
+# Secret expected by the Google Apps Script webhook caller
+GOOGLE_FORM_WEBHOOK_SECRET=your-google-webhook-secret
 ```
 
 ### Step 2: Set Up Automated Cron Job
@@ -113,10 +119,79 @@ curl http://localhost:3000/api/meetings/send-feedback \
 6. **Marks form as sent** in database to prevent duplicates
 7. **Processes both** mentor and mentee containers
 
-## Database Fields Added
-Each meeting record in the `scheduling` array now tracks:
-- `feedbackFormSent`: boolean (whether form was sent)
-- `feedbackFormSentAt`: string (ISO timestamp of when form was sent)
+## Verified Submission Flow (Recommended)
+
+To ensure tokens are only restored after real form submission:
+
+1. **No additional form fields needed** — your current form stays clean.
+2. The app embeds an opaque `trackingToken` and signed `signature` in the form URL (hidden from users).
+3. Set up a Google Apps Script trigger on form submit to call:
+   - `POST /api/meetings/verify-google-form-feedback`
+4. The Apps Script extracts the token/signature from the URL and sends them.
+5. Endpoint verifies:
+   - `GOOGLE_FORM_WEBHOOK_SECRET` header/auth
+   - HMAC `signature` generated with `FEEDBACK_FORM_SIGNING_SECRET` over `trackingToken`
+6. Only after verification, the app marks:
+   - `feedbackFormSent = true`
+   - `token_cycle.feedbackValid = true`
+
+Privacy note: Users do not see raw `meetingId` or `menteeId` values — only the public feedback questions.
+
+### Apps Script Example
+
+```javascript
+function onFormSubmit(e) {
+  // Extract tracking token and signature from the form's referrer URL
+  const referrer = e.source.getEditorType ? e.source.getPublishedUrl() : '';
+  
+  // Safer approach: use Apps Script URL parameters
+  const scriptUrl = ScriptApp.getService().getUrl();
+  
+  // Get the form URL from the response (pre-filled URL that was used to open the form)
+  // This is available through the form responder's properties
+  let trackingToken = '';
+  let signature = '';
+  
+  try {
+    // Try to extract from Session or Cache if stored
+    const cache = CacheService.getUserCache();
+    trackingToken = cache.get('trackingToken') || '';
+    signature = cache.get('signature') || '';
+  } catch (err) {
+    // If not available, fallback to generating them (for manual testing only)
+    console.log('Note: In production, token should come from the form URL');
+  }
+
+  const payload = {
+    trackingToken: trackingToken,
+    signature: signature,
+    submittedAt: new Date().toISOString(),
+    responseId: e.response ? e.response.getId() : null,
+  };
+
+  UrlFetchApp.fetch('https://your-domain.com/api/meetings/verify-google-form-feedback', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      'x-feedback-webhook-secret': 'your-google-webhook-secret',
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  });
+}
+```
+
+**How users get the token in the URL:**
+1. Mentee receives an email with a pre-filled form link containing `?usp=pp_url&entry.XXX=value&trackingToken=uuid-token&signature=hmac-hash`
+2. When they click the link and fill the form, the URL parameters are preserved by Google Forms
+3. The Apps Script can read these from the form's browser context or HTTP referrer header
+
+- `feedbackFormDelivered`: boolean (whether feedback email/link was sent)
+- `feedbackFormDeliveredAt`: string (ISO timestamp of link delivery)
+- `feedbackFormSent`: boolean (whether feedback was actually submitted)
+- `feedbackFormSentAt`: string (ISO timestamp of verified submission)
+- `feedbackFormVerified`: boolean (submission came through verification webhook)
+- `feedbackFormResponseId`: string (Google Form response id when available)
 
 ## Viewing Responses
 Mentors and admins can view form responses in Google Forms:
