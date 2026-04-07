@@ -95,16 +95,19 @@ export default function Home() {
 
         :root {
           --black:     #0A0A0A;
-          --off-black: #141414;
-          --charcoal:  #1E1E1E;
+          --charcoal:  #1A1A1A;
+
           --mid:       #6B6B6B;
-          --border:    #E0E0E0;
-          --surface:   #F7F7F5;
+          --border:    #E6E6E6;
+
           --white:     #FFFFFF;
+          --surface:   #FFFEF8;   /* warm white */
+          --surface-2: #FFF9E6;   /* yellow-tinted layer */
+          --surface-3: #FFF3CC;   /* deeper yellow layer */
+
           --yellow:    #F5C518;
           --yellow-d:  #D4A30F;
-          --yellow-l:  #FEF7D0;
-          --yellow-xl: #FFFBEB;
+          --yellow-soft: rgba(245,197,24,0.12);
         }
 
         html { scroll-behavior: smooth; }
@@ -117,39 +120,71 @@ export default function Home() {
           -moz-osx-font-smoothing: grayscale;
         }
 
+        section {
+          position: relative;
+          padding: 100px 40px;
+        }
+        .soft-glow {
+          position: absolute;
+          width: 500px;
+          height: 500px;
+          background: radial-gradient(
+            circle,
+            rgba(245,197,24,0.15) 0%,
+            transparent 70%
+          );
+          filter: blur(40px);
+          pointer-events: none;
+        }
         /* ─── FLOATING NAV ─────────────────────────── */
         .floating-nav {
           position: fixed;
           top: 16px;
           left: 50%;
-          transform: translateX(-50%) translateY(-10px);
+          transform: translateX(-50%) translateY(-12px) scale(0.98);
           z-index: 1000;
+
           width: calc(100% - 48px);
-          max-width: 1080px;
-          background: rgba(10, 10, 10, 0.94);
-          backdrop-filter: blur(20px) saturate(180%);
-          -webkit-backdrop-filter: blur(20px) saturate(180%);
-          border: 1px solid rgba(255,255,255,0.07);
-          border-radius: 14px;
-          padding: 0 20px;
-          height: 54px;
+          max-width: 980px;
+          height: 56px;
+
           display: flex;
           align-items: center;
           justify-content: space-between;
+          padding: 0 18px;
+
+          border-radius: 16px;
+
+          /* ✨ Glass effect */
+          background: rgba(255, 255, 255, 0.65);
+          backdrop-filter: blur(18px) saturate(180%);
+          -webkit-backdrop-filter: blur(18px) saturate(180%);
+
+          border: 1px solid rgba(0,0,0,0.08);
+
+          /* ✨ Depth */
+          box-shadow:
+            0 8px 30px rgba(0,0,0,0.08),
+            inset 0 1px 0 rgba(255,255,255,0.6);
+
           opacity: 0;
           pointer-events: none;
-          transition: opacity 0.3s ease, transform 0.3s ease;
+
+          transition:
+            opacity 0.35s ease,
+            transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
         }
+
         .floating-nav.visible {
           opacity: 1;
           pointer-events: all;
-          transform: translateX(-50%) translateY(0);
+          transform: translateX(-50%) translateY(0) scale(1);
         }
         .floating-nav-logo {
           font-family: 'DM Serif Display', serif;
           font-size: 18px;
           font-weight: 400;
-          color: var(--white);
+          color: var(--black);
           text-decoration: none;
           letter-spacing: -0.01em;
           display: flex;
@@ -172,18 +207,18 @@ export default function Home() {
         .floating-nav-links button {
           font-family: 'DM Sans', sans-serif;
           font-size: 13.5px;
-          font-weight: 400;
-          color: rgba(255,255,255,0.55);
+          font-weight: 500;
+          color: rgba(0,0,0,0.55);
           background: none;
           border: none;
           cursor: pointer;
-          padding: 5px 12px;
-          border-radius: 7px;
-          transition: color 0.15s, background 0.15s;
+          padding: 6px 12px;
+          border-radius: 8px;
+          transition: all 0.2s ease;
         }
         .floating-nav-links button:hover {
-          color: var(--white);
-          background: rgba(255,255,255,0.07);
+          color: var(--black);
+          background: rgba(0,0,0,0.06);
         }
         .floating-nav-actions {
           display: flex;
@@ -195,7 +230,7 @@ export default function Home() {
           font-family: 'DM Sans', sans-serif;
           font-size: 13.5px;
           font-weight: 400;
-          color: rgba(255,255,255,0.55);
+          color: var(--black);
           text-decoration: none;
           padding: 6px 14px;
           border-radius: 7px;
@@ -206,20 +241,27 @@ export default function Home() {
           font-family: 'DM Sans', sans-serif;
           font-size: 13px;
           font-weight: 600;
-          color: var(--black);
+          color: var(--white);
           text-decoration: none;
-          padding: 7px 18px;
+          padding: 7px 16px;
           border-radius: 8px;
-          background: var(--yellow);
-          transition: background 0.2s;
+          background: linear-gradient(
+            135deg,
+            var(--yellow) 0%,
+            var(--yellow-d) 100%
+          );
+          box-shadow: 0 4px 14px rgba(245,197,24,0.35);
+          transition: all 0.2s ease;
         }
-        .fnav-signup:hover { background: var(--yellow-d); }
+        .fnav-signup:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 18px rgba(245,197,24,0.45);
+        }
 
         /* ─── HERO SECTION ─────────────────────────── */
         .hero-section {
-          background: var(--yellow-xl);
-          position: relative;
-          overflow: hidden;
+          padding: 0;
+          background: transparent;
         }
         .hero-section::before {
           content: '';
@@ -393,6 +435,7 @@ export default function Home() {
 
         /* ─── HERO CONTENT ─────────────────────────── */
         .hero-content {
+          padding: 80px 40px 120px;
           position: relative;
           z-index: 1;
           max-width: 1120px;
@@ -558,17 +601,19 @@ export default function Home() {
         .partner-cell:hover .partner-cell-text { color: var(--yellow-d); }
 
         /* ─── MENTORS ──────────────────────────────── */
-        .mentors-section {
-          padding: 100px 40px;
-          background: var(--black);
-          position: relative;
-          overflow: hidden;
+        .hero-mentors-bg {
+          background: linear-gradient(
+            180deg,
+            #FFFDF4 0%,
+            var(--surface-2) 40%,
+            var(--surface-3) 75%,
+            #ffffff 100%
+          );
         }
-        .mentors-section::before {
-          content: '';
-          position: absolute;
-          top: 0; left: 0; right: 0; height: 1px;
-          background: linear-gradient(90deg, transparent 5%, rgba(245,197,24,0.45) 50%, transparent 95%);
+        .mentors-section {
+          padding-top: 80px;
+          background: transparent;
+          margin-top: 0;
         }
         .mentors-inner { max-width: 1120px; margin: 0 auto; }
         .mentors-header {
@@ -595,12 +640,12 @@ export default function Home() {
           font-weight: 400;
           line-height: 1.06;
           letter-spacing: -0.025em;
-          color: var(--white);
+          color: var(--black);
         }
         .mentors-title em { font-style: italic; color: var(--yellow); }
         .mentors-subtitle {
           font-size: 14px;
-          color: #484848;
+          color: var(--charcoal);
           max-width: 260px;
           text-align: right;
           line-height: 1.75;
@@ -612,8 +657,8 @@ export default function Home() {
           gap: 8px;
         }
         .mentor-card {
-          background: #0e0e0e;
-          border: 1px solid #1a1a1a;
+          background: var(--white);
+          border: 1px solid var(--border);
           border-radius: 10px;
           padding: 22px;
           cursor: pointer;
@@ -635,7 +680,7 @@ export default function Home() {
           transform-origin: left;
           transition: transform 0.3s;
         }
-        .mentor-card:hover { border-color: #282828; transform: translateY(-2px); }
+        .mentor-card:hover { border-color: var(--yellow); transform: translateY(-2px); box-shadow: 0 6px 24px rgba(245,197,24,0.15); }
         .mentor-card:hover::after { transform: scaleX(1); }
         .mentor-avatar {
           width: 44px; height: 44px;
@@ -654,13 +699,13 @@ export default function Home() {
         .mentor-name {
           font-size: 14.5px;
           font-weight: 500;
-          color: var(--white);
+          color: var(--black);
           margin-bottom: 4px;
           letter-spacing: -0.01em;
         }
         .mentor-role {
           font-size: 12.5px;
-          color: #484848;
+          color: var(--mid);
           margin-bottom: 14px;
           line-height: 1.55;
           font-weight: 300;
@@ -672,8 +717,8 @@ export default function Home() {
           letter-spacing: 0.06em;
           text-transform: uppercase;
           padding: 3px 8px;
-          border: 1px solid #1e1e1e;
-          color: #404040;
+          border: 1px solid rgba(245,197,24,0.3);
+          color: var(--yellow-d);
           border-radius: 4px;
           transition: all 0.2s;
         }
@@ -706,7 +751,9 @@ export default function Home() {
         }
 
         /* ─── ABOUT ────────────────────────────────── */
-        .about-section { padding: 100px 40px; background: var(--white); }
+        .about-section {
+          background: var(--white);
+        }
         .about-inner { max-width: 1120px; margin: 0 auto; }
         .about-eyebrow {
           font-size: 10px;
@@ -735,13 +782,13 @@ export default function Home() {
           font-family: 'DM Serif Display', serif;
           font-size: 72px;
           font-weight: 400;
-          color: var(--surface);
+          color: rgba(245,197,24,0.35); /* visible yellow */
           line-height: 1;
           margin-bottom: 4px;
           letter-spacing: -0.04em;
           transition: color 0.3s;
         }
-        .about-card:hover .about-card-num { color: var(--yellow-l); }
+        .about-card:hover .about-card-num { color: var(--yellow);  }
         .about-card-tag {
           font-size: 10px;
           font-weight: 700;
@@ -772,11 +819,11 @@ export default function Home() {
 
         /* ─── CTA ──────────────────────────────────── */
         .cta-section {
-          padding: 120px 40px;
-          background: var(--black);
-          text-align: center;
-          position: relative;
-          overflow: hidden;
+          background: linear-gradient(
+            180deg,
+            var(--surface-2) 0%,
+            var(--yellow-soft) 100%
+          );
         }
         .cta-section::before {
           content: '';
@@ -799,13 +846,13 @@ export default function Home() {
           font-weight: 400;
           line-height: 1.04;
           letter-spacing: -0.03em;
-          color: var(--white);
+          color: var(--black);
           margin-bottom: 18px;
         }
         .cta-title em { font-style: italic; color: var(--yellow); }
         .cta-sub {
           font-size: 16px;
-          color: #484848;
+          color: var(--mid);
           line-height: 1.78;
           margin-bottom: 36px;
           font-weight: 300;
@@ -827,6 +874,71 @@ export default function Home() {
           transition: background 0.2s, transform 0.15s;
         }
         .btn-cta:hover { background: var(--yellow-d); transform: translateY(-1px); }
+
+        /* ─── FAQ ───────────────────────────────────── */
+        .faq-section {
+        background: linear-gradient(
+          180deg,
+          var(--surface-3) 0%,
+          var(--white) 100%
+        );
+      }
+
+        .faq-inner {
+          max-width: 900px;
+          margin: 0 auto;
+        }
+
+        .faq-header {
+          text-align: center;
+          margin-bottom: 48px;
+        }
+
+        .faq-eyebrow {
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: var(--yellow);
+          margin-bottom: 12px;
+        }
+
+        .faq-title {
+          font-family: 'DM Serif Display', serif;
+          font-size: 42px;
+          color: var(--black);
+        }
+
+        .faq-list {
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+
+        .faq-item {
+          padding: 20px 24px;
+          border-radius: 10px;
+          background: var(--white);
+          border: 1px solid var(--border);
+          transition: border 0.2s;
+        }
+
+        .faq-item:hover {
+          border-color: rgba(245,197,24,0.3);
+        }
+
+        .faq-question {
+          font-size: 15px;
+          font-weight: 500;
+          color: var(--black);
+          margin-bottom: 6px;
+        }
+
+        .faq-answer {
+          font-size: 14px;
+          color: var(--mid);
+          line-height: 1.7;
+        }
 
         /* ─── FOOTER ───────────────────────────────── */
         .footer { background: var(--black); padding: 64px 40px 40px; border-top: 1px solid #0e0e0e; }
@@ -857,7 +969,7 @@ export default function Home() {
         }
         .footer-tagline {
           font-size: 13.5px;
-          color: #3a3a3a;
+          color: rgba(255,255,255,0.65);
           line-height: 1.72;
           max-width: 220px;
           font-weight: 300;
@@ -867,26 +979,26 @@ export default function Home() {
           font-weight: 700;
           letter-spacing: 0.1em;
           text-transform: uppercase;
-          color: var(--yellow);
+          color: rgba(255,255,255,0.9);
           margin-bottom: 16px;
         }
         .footer-col-links { list-style: none; display: flex; flex-direction: column; gap: 10px; }
         .footer-col-links a {
           font-size: 13.5px;
-          color: #3a3a3a;
+          color: rgba(255,255,255,0.65);
           text-decoration: none;
           transition: color 0.15s;
           font-weight: 300;
         }
-        .footer-col-links a:hover { color: var(--white); }
+        .footer-col-links a:hover { color: var(--white);}
         .footer-bottom {
           display: flex;
           justify-content: space-between;
           align-items: center;
           padding-top: 28px;
-          border-top: 1px solid #0e0e0e;
+          border-top: 1px solid rgba(255,255,255,0.08);
         }
-        .footer-copy { font-size: 12.5px; color: #2a2a2a; font-weight: 300; }
+        .footer-copy { font-size: 12.5px; color: rgba(255,255,255,0.45); font-weight: 300; }
         .footer-badge {
           display: inline-flex;
           align-items: center;
@@ -913,17 +1025,14 @@ export default function Home() {
           .footer-top { grid-template-columns: 1fr 1fr; }
         }
         @media (max-width: 768px) {
-          .hero-nav { padding: 22px 20px 0; }
+          .hero-nav { padding: 24px 40px 0; }
           .hero-nav-links, .hero-nav-actions { display: none; }
           .hero-mobile-toggle { display: flex; }
           .hero-content { padding: 60px 20px 80px; }
           .partners-grid { grid-template-columns: repeat(3, 1fr); }
-          .mentors-section { padding: 72px 20px; }
           .mentors-header { flex-direction: column; align-items: flex-start; gap: 14px; }
           .mentors-subtitle { text-align: left; max-width: 100%; }
-          .about-section { padding: 72px 20px; }
           .about-grid { grid-template-columns: 1fr; }
-          .cta-section { padding: 80px 20px; }
           .footer { padding: 48px 20px 32px; }
           .footer-top { grid-template-columns: 1fr; gap: 28px; }
           .footer-bottom { flex-direction: column; gap: 14px; text-align: center; }
@@ -956,165 +1065,169 @@ export default function Home() {
       </nav>
 
       {/* ─── HERO SECTION ───────────────────────────── */}
-      <section className="hero-section" id="home" ref={heroRef}>
-        <div style={{ position: 'relative' }}>
-          <nav className="hero-nav" aria-label="Primary navigation">
-            <Link href="/" className="hero-nav-logo">
-              Connext
-              <span className="hero-nav-logo-dot" />
-              <span className="hero-nav-badge">Beta</span>
-            </Link>
-            <ul className="hero-nav-links">
-              <li><button onClick={() => scrollToSection('home')}>Home</button></li>
-              <li><button onClick={() => scrollToSection('mentors')}>Mentors</button></li>
-              <li><button onClick={() => scrollToSection('about')}>About</button></li>
-              <li><button onClick={() => scrollToSection('contact')}>Contact</button></li>
-            </ul>
-            <div className="hero-nav-actions">
-              <Link href="/login" className="hero-nav-signin">Sign In</Link>
-              <Link href="/signup" className="hero-nav-signup">Get Started</Link>
-            </div>
-            <button
-              className="hero-mobile-toggle"
-              aria-label="Toggle navigation"
-              onClick={() => setMobileMenuOpen(o => !o)}
-            >
-              <span style={{ transform: mobileMenuOpen ? 'rotate(45deg) translateY(6px)' : undefined }} />
-              <span style={{ opacity: mobileMenuOpen ? 0 : 1 }} />
-              <span style={{ transform: mobileMenuOpen ? 'rotate(-45deg) translateY(-6px)' : undefined }} />
-            </button>
-          </nav>
-
-          {mobileMenuOpen && (
-            <div className="mobile-nav-panel" role="dialog" aria-label="Mobile navigation">
-              <button onClick={() => scrollToSection('home')}>Home</button>
-              <button onClick={() => scrollToSection('mentors')}>Mentors</button>
-              <button onClick={() => scrollToSection('about')}>About</button>
-              <button onClick={() => scrollToSection('contact')}>Contact</button>
-              <div className="mobile-nav-divider" />
-              <div className="mobile-nav-cta">
-                <Link href="/login" className="m-signin">Sign In</Link>
-                <Link href="/signup" className="m-signup">Get Started</Link>
+      <div className="hero-mentors-bg">
+        <section className="hero-section" id="home" ref={heroRef}>
+          <div className="soft-glow" style={{ top: '-100px', right: '-100px' }} />
+          <div style={{ position: 'relative' }}>
+            <nav className="hero-nav" aria-label="Primary navigation">
+              <Link href="/" className="hero-nav-logo">
+                Connext
+                <span className="hero-nav-logo-dot" />
+                <span className="hero-nav-badge">Beta</span>
+              </Link>
+              <ul className="hero-nav-links">
+                <li><button onClick={() => scrollToSection('home')}>Home</button></li>
+                <li><button onClick={() => scrollToSection('mentors')}>Mentors</button></li>
+                <li><button onClick={() => scrollToSection('about')}>About</button></li>
+                <li><button onClick={() => scrollToSection('contact')}>Contact</button></li>
+              </ul>
+              <div className="hero-nav-actions">
+                <Link href="/login" className="hero-nav-signin">Sign In</Link>
+                <Link href="/signup" className="hero-nav-signup">Get Started</Link>
               </div>
-            </div>
-          )}
-        </div>
+              <button
+                className="hero-mobile-toggle"
+                aria-label="Toggle navigation"
+                onClick={() => setMobileMenuOpen(o => !o)}
+              >
+                <span style={{ transform: mobileMenuOpen ? 'rotate(45deg) translateY(6px)' : undefined }} />
+                <span style={{ opacity: mobileMenuOpen ? 0 : 1 }} />
+                <span style={{ transform: mobileMenuOpen ? 'rotate(-45deg) translateY(-6px)' : undefined }} />
+              </button>
+            </nav>
 
-        <div className="hero-content">
-          <div className="hero-eyebrow">
-            <span className="hero-eyebrow-line" />
-            Malaysia&apos;s Professional Mentorship Platform
-            <span className="hero-eyebrow-line" />
-          </div>
-
-          <h1 className="hero-title">
-            Unlock your<br /><em>potential</em>
-          </h1>
-
-          <p className="hero-desc">
-            Connect with experienced professionals, schedule sessions, and accelerate your career through expert mentorship.
-          </p>
-
-          <div className="hero-cta">
-            <Link href="/signup" className="btn-primary">Get Started →</Link>
-            <Link href="/login" className="btn-ghost">Sign In</Link>
-          </div>
-
-          <div className="partners-wrap">
-            <div className="partners-label-row">
-              <div className="partners-label-line" />
-              <span className="partners-label-text">Trusted Partner Institutions</span>
-              <div className="partners-label-line" />
-            </div>
-            <div className="partners-card">
-              <div className="partners-grid">
-                {institutionPhotos.length > 0
-                  ? institutionPhotos.slice(0, 10).map((photo, idx) => (
-                      <div key={idx} className="partner-cell">
-                        <img
-                          src={getGoogleDriveImageUrl(photo.url)}
-                          alt={photo.name}
-                          onError={(e) => {
-                            const p = e.currentTarget.parentElement;
-                            if (p) {
-                              e.currentTarget.style.display = 'none';
-                              const s = document.createElement('span');
-                              s.className = 'partner-cell-text';
-                              s.textContent = photo.name;
-                              p.appendChild(s);
-                            }
-                          }}
-                        />
-                      </div>
-                    ))
-                  : partnerFallbacks.map(name => (
-                      <div key={name} className="partner-cell">
-                        <span className="partner-cell-text">{name}</span>
-                      </div>
-                    ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ─── MENTORS ────────────────────────────────── */}
-      <section className="mentors-section" id="mentors">
-        <div className="mentors-inner">
-          <div className="mentors-header">
-            <div>
-              <div className="mentors-eyebrow">Expert Mentors</div>
-              <h2 className="mentors-title">Learn from<br /><em>industry leaders</em></h2>
-            </div>
-            <p className="mentors-subtitle">
-              Connect with experienced professionals who are passionate about helping you succeed.
-            </p>
-          </div>
-
-          <div className="mentors-grid">
-            {loading ? (
-              <div className="mentor-loading">Loading mentors…</div>
-            ) : visibleMentors.length > 0 ? (
-              visibleMentors.map(mentor => {
-                const initials = getInitials(mentor.name);
-                const tags = mentor.expertise ? mentor.expertise.split(',').map(t => t.trim()).slice(0, 2) : [];
-                return (
-                  <div key={mentor.id} className="mentor-card">
-                    <div className="mentor-avatar">
-                      {mentor.image ? (
-                        <img src={getGoogleDriveImageUrl(mentor.image)} alt={mentor.name}
-                          onError={e => {
-                            e.currentTarget.style.display = 'none';
-                            const p = e.currentTarget.parentElement;
-                            if (p) p.textContent = initials;
-                          }} />
-                      ) : initials}
-                    </div>
-                    <div className="mentor-name">{mentor.name}</div>
-                    <div className="mentor-role">{mentor.expertise}</div>
-                    {tags.length > 0 && (
-                      <div className="mentor-tags">
-                        {tags.map(tag => <span key={tag} className="mentor-tag">{tag}</span>)}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            ) : (
-              <div className="mentor-loading" style={{ color: '#2a2a2a' }}>
-                {fetchError || 'No mentors available yet.'}
+            {mobileMenuOpen && (
+              <div className="mobile-nav-panel" role="dialog" aria-label="Mobile navigation">
+                <button onClick={() => scrollToSection('home')}>Home</button>
+                <button onClick={() => scrollToSection('mentors')}>Mentors</button>
+                <button onClick={() => scrollToSection('about')}>About</button>
+                <button onClick={() => scrollToSection('contact')}>Contact</button>
+                <div className="mobile-nav-divider" />
+                <div className="mobile-nav-cta">
+                  <Link href="/login" className="m-signin">Sign In</Link>
+                  <Link href="/signup" className="m-signup">Get Started</Link>
+                </div>
               </div>
             )}
           </div>
 
-          {totalPages > 1 && (
-            <div className="mentors-nav">
-              <button className="mentors-nav-btn" onClick={() => setMentorPage(p => Math.max(0, p - 1))} disabled={mentorPage === 0}>←</button>
-              <button className="mentors-nav-btn" onClick={() => setMentorPage(p => Math.min(totalPages - 1, p + 1))} disabled={mentorPage === totalPages - 1}>→</button>
+          <div className="hero-content">
+            <div className="hero-eyebrow">
+              <span className="hero-eyebrow-line" />
+              Malaysia&apos;s Professional Mentorship Platform
+              <span className="hero-eyebrow-line" />
             </div>
-          )}
-        </div>
-      </section>
+
+            <h1 className="hero-title">
+              Unlock your<br /><em>potential</em>
+            </h1>
+
+            <p className="hero-desc">
+              Connect with experienced professionals, schedule sessions, and accelerate your career through expert mentorship.
+            </p>
+
+            <div className="hero-cta">
+              <Link href="/signup" className="btn-primary">Get Started →</Link>
+              <Link href="/login" className="btn-ghost">Sign In</Link>
+            </div>
+
+            <div className="partners-wrap">
+              <div className="partners-label-row">
+                <div className="partners-label-line" />
+                <span className="partners-label-text">Trusted Partner Institutions</span>
+                <div className="partners-label-line" />
+              </div>
+              <div className="partners-card">
+                <div className="partners-grid">
+                  {institutionPhotos.length > 0
+                    ? institutionPhotos.slice(0, 10).map((photo, idx) => (
+                        <div key={idx} className="partner-cell">
+                          <img
+                            src={getGoogleDriveImageUrl(photo.url)}
+                            alt={photo.name}
+                            onError={(e) => {
+                              const p = e.currentTarget.parentElement;
+                              if (p) {
+                                e.currentTarget.style.display = 'none';
+                                const s = document.createElement('span');
+                                s.className = 'partner-cell-text';
+                                s.textContent = photo.name;
+                                p.appendChild(s);
+                              }
+                            }}
+                          />
+                        </div>
+                      ))
+                    : partnerFallbacks.map(name => (
+                        <div key={name} className="partner-cell">
+                          <span className="partner-cell-text">{name}</span>
+                        </div>
+                      ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── MENTORS ────────────────────────────────── */}
+        <section className="mentors-section" id="mentors">
+        <div className="soft-glow" style={{ top: '-200px', left: '50%' }} />
+          <div className="mentors-inner">
+            <div className="mentors-header">
+              <div>
+                <div className="mentors-eyebrow">Expert Mentors</div>
+                <h2 className="mentors-title">Learn from<br /><em>industry leaders</em></h2>
+              </div>
+              <p className="mentors-subtitle">
+                Connect with experienced professionals who are passionate about helping you succeed.
+              </p>
+            </div>
+
+            <div className="mentors-grid">
+              {loading ? (
+                <div className="mentor-loading">Loading mentors…</div>
+              ) : visibleMentors.length > 0 ? (
+                visibleMentors.map(mentor => {
+                  const initials = getInitials(mentor.name);
+                  const tags = mentor.expertise ? mentor.expertise.split(',').map(t => t.trim()).slice(0, 2) : [];
+                  return (
+                    <div key={mentor.id} className="mentor-card">
+                      <div className="mentor-avatar">
+                        {mentor.image ? (
+                          <img src={getGoogleDriveImageUrl(mentor.image)} alt={mentor.name}
+                            onError={e => {
+                              e.currentTarget.style.display = 'none';
+                              const p = e.currentTarget.parentElement;
+                              if (p) p.textContent = initials;
+                            }} />
+                        ) : initials}
+                      </div>
+                      <div className="mentor-name">{mentor.name}</div>
+                      <div className="mentor-role">{mentor.expertise}</div>
+                      {tags.length > 0 && (
+                        <div className="mentor-tags">
+                          {tags.map(tag => <span key={tag} className="mentor-tag">{tag}</span>)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="mentor-loading" style={{ color: '#2a2a2a' }}>
+                  {fetchError || 'No mentors available yet.'}
+                </div>
+              )}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="mentors-nav">
+                <button className="mentors-nav-btn" onClick={() => setMentorPage(p => Math.max(0, p - 1))} disabled={mentorPage === 0}>←</button>
+                <button className="mentors-nav-btn" onClick={() => setMentorPage(p => Math.min(totalPages - 1, p + 1))} disabled={mentorPage === totalPages - 1}>→</button>
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
 
       {/* ─── ABOUT ──────────────────────────────────── */}
       <section className="about-section" id="about">
@@ -1153,6 +1266,41 @@ export default function Home() {
         </div>
       </section>
 
+
+          {/* ─── FAQ ───────────────────────────────────── */}
+          <section className="faq-section">
+            <div className="faq-inner">
+              <div className="faq-header">
+                <h2 className="faq-title">FAQ</h2>
+              </div>
+
+              <div className="faq-list">
+                {[
+                  {
+                    q: "How do I find a mentor?",
+                    a: "Browse mentor profiles, filter by expertise, and book sessions directly through the platform."
+                  },
+                  {
+                    q: "Are mentors verified?",
+                    a: "Yes, all mentors go through a vetting process to ensure quality and credibility."
+                  },
+                  {
+                    q: "How much does a session cost?",
+                    a: "Pricing varies by mentor. You can view rates on each mentor’s profile before booking."
+                  },
+                  {
+                    q: "Can I become a mentor?",
+                    a: "Absolutely. Apply through our platform and we’ll review your profile."
+                  }
+                ].map((item, i) => (
+                  <div key={i} className="faq-item">
+                    <div className="faq-question">{item.q}</div>
+                    <div className="faq-answer">{item.a}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
       {/* ─── FOOTER ─────────────────────────────────── */}
       <footer className="footer" id="contact">
         <div className="footer-inner">
