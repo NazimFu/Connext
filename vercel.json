@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/evaluate-token-cycles",
       "schedule": "5 0 * * *"
+    },
+    {
+      "path": "/api/meetings/send-feedback",
+      "schedule": "0 * * * *"
     }
   ]
 }

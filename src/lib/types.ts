@@ -1,4 +1,6 @@
 
+import type { MeetingFeedbackRecord } from './meeting-feedback';
+
 export type BookedSlot = {
   id: string;
   date: string; // "2025-09-16"
@@ -27,7 +29,17 @@ export type Scheduling = {
   mentee_email?: string;
 
   // Optional fields with default null/none values in the database
-  feedback_form?: any | null;
+  feedback_form?: MeetingFeedbackRecord | null;
+  feedbackFormDelivered?: boolean;
+  feedbackFormDeliveredAt?: string | null;
+  feedbackFormSent?: boolean;
+  feedbackFormSentAt?: string | null;
+  feedbackFormVerified?: boolean;
+  feedbackFormVerifiedAt?: string | null;
+  feedbackFormResponseId?: string | null;
+  feedbackFormUrl?: string | null;
+  feedbackToken?: string | null;
+  mentorFeedbackNotifiedAt?: string | null;
   report_status?: 'none' | 'pending' | 'resolved' | null;
   report_reason?: string | null;
   cancel_info?: any | null;
@@ -87,6 +99,7 @@ export type User = {
     tokenUsedAt: string;
     feedbackSubmittedAt: string | null;
     feedbackValid: boolean;
+    feedbackVerificationSource?: 'google-form-webhook' | 'direct-feedback';
     mentorReported: boolean;
     reportRecordedAt: string | null;
     evaluatedAt: string | null;
@@ -122,6 +135,7 @@ export type Mentee = {
     tokenUsedAt: string;
     feedbackSubmittedAt: string | null;
     feedbackValid: boolean;
+    feedbackVerificationSource?: 'google-form-webhook' | 'direct-feedback';
     mentorReported: boolean;
     reportRecordedAt: string | null;
     evaluatedAt: string | null;
@@ -165,6 +179,7 @@ export type Mentor = {
     tokenUsedAt: string;
     feedbackSubmittedAt: string | null;
     feedbackValid: boolean;
+    feedbackVerificationSource?: 'google-form-webhook' | 'direct-feedback';
     mentorReported: boolean;
     reportRecordedAt: string | null;
     evaluatedAt: string | null;

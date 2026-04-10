@@ -20,7 +20,6 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generateFeedbackFormUrl } from '@/lib/googleForm';
 
 interface MeetingRequest {
   meetingId: string;
@@ -613,29 +612,18 @@ export default function MentorTasksPage() {
     }
   };
 
-  const generateFeedbackFormUrl = (task: TaskItem) => {
-    // If form URL already exists, use it
-    if (task.feedbackFormUrl) {
-      return task.feedbackFormUrl;
-    }
-    
-    // Otherwise generate it - use current user's name as the mentee (feedback giver)
-    const menteeName = user?.name || 'Mentor';
-    const baseUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSdVEs5LL2tLlH5yshUYpPW5XhNlB9_rtV5-PkE6438qpqJg5g/viewform';
-    const params = new URLSearchParams({
-      'usp': 'pp_url',
-      'entry.1761271270': menteeName,
-      'entry.768740967': task.mentorName || '',
-      'entry.1198034537': task.date,
-      'entry.183080322': task.time
-    });
-    
-    return `${baseUrl}?${params.toString()}`;
-  };
-
   const handleOpenFeedbackForm = async () => {
     if (!selectedTask) return;
-    const formUrl = generateFeedbackFormUrl(selectedTask);
+    const formUrl = selectedTask.feedbackFormUrl;
+
+    if (!formUrl) {
+      toast({
+        variant: 'destructive',
+        title: 'Feedback link unavailable',
+        description: 'The signed feedback link has not been issued yet. Refresh after the feedback email job runs.',
+      });
+      return;
+    }
 
     toast({
       title: "Feedback Form Opened",

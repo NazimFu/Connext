@@ -11,6 +11,10 @@ export const GOOGLE_FORM_CONFIG = {
     mentorName: 'entry.768740967',
     sessionDate: 'entry.1198034537',
     sessionTime: 'entry.183080322',
+    feedbackToken:
+      process.env.NEXT_PUBLIC_GOOGLE_FORM_FEEDBACK_TOKEN_ENTRY_ID ||
+      process.env.GOOGLE_FORM_ENTRY_TRACKING_TOKEN ||
+      '',
     trackingToken: process.env.GOOGLE_FORM_ENTRY_TRACKING_TOKEN || '',
     trackingMeetingId: process.env.GOOGLE_FORM_ENTRY_MEETING_ID || '',
     trackingMenteeId: process.env.GOOGLE_FORM_ENTRY_MENTEE_ID || '',
@@ -23,6 +27,7 @@ interface FeedbackFormParams {
   mentorName: string;
   sessionDate: string; // Format: YYYY-MM-DD
   sessionTime: string; // Format: HH:MM
+  feedbackToken?: string;
   trackingToken?: string;
   meetingId?: string;
   menteeId?: string;
@@ -98,6 +103,7 @@ export function generateFeedbackFormUrl({
   mentorName,
   sessionDate,
   sessionTime,
+  feedbackToken,
   trackingToken,
   meetingId,
   menteeId,
@@ -109,6 +115,10 @@ export function generateFeedbackFormUrl({
     [GOOGLE_FORM_CONFIG.entryIds.sessionDate]: sessionDate,
     [GOOGLE_FORM_CONFIG.entryIds.sessionTime]: sessionTime
   });
+
+  if (feedbackToken && GOOGLE_FORM_CONFIG.entryIds.feedbackToken) {
+    params.set(GOOGLE_FORM_CONFIG.entryIds.feedbackToken, feedbackToken);
+  }
 
   const hasTokenTracking = Boolean(trackingToken);
   if (hasTokenTracking) {

@@ -132,27 +132,17 @@ export default function MenteeDashboardPage() {
     }
   };
 
-  const generateFeedbackFormUrl = (meeting: MeetingRequest) => {
-    // If form URL already exists, use it
-    if (meeting.feedbackFormUrl) {
-      return meeting.feedbackFormUrl;
-    }
-    
-    // Otherwise generate it
-    const baseUrl = 'https://docs.google.com/forms/d/e/1FAIpQLSdVEs5LL2tLlH5yshUYpPW5XhNlB9_rtV5-PkE6438qpqJg5g/viewform';
-    const params = new URLSearchParams({
-      'usp': 'pp_url',
-      'entry.1761271270': meeting.mentee_name,
-      'entry.768740967': meeting.mentor_name,
-      'entry.1198034537': meeting.date,
-      'entry.183080322': meeting.time
-    });
-    
-    return `${baseUrl}?${params.toString()}`;
-  };
-
   const handleOpenFeedbackForm = async (meeting: MeetingRequest) => {
-    const formUrl = generateFeedbackFormUrl(meeting);
+    const formUrl = meeting.feedbackFormUrl;
+
+    if (!formUrl) {
+      toast({
+        variant: "destructive",
+        title: "Feedback link unavailable",
+        description: "The signed feedback link has not been issued yet. Refresh after the feedback email job runs.",
+      });
+      return;
+    }
 
     toast({
       title: "Feedback Form Opened",

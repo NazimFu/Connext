@@ -12,6 +12,66 @@ interface EmailParams {
   }>;
 }
 
+const escapeHtml = (value: unknown): string =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const formatIsoForEmail = (value: unknown): string => {
+  if (typeof value !== 'string') {
+    return 'N/A';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return escapeHtml(value);
+  }
+
+  return escapeHtml(
+    parsed.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+  );
+};
+
+const renderFeedbackResponses = (responses: unknown): string => {
+  if (!Array.isArray(responses) || responses.length === 0) {
+    return `
+      <p style="margin: 0; font-size: 14px; color: #6b7280;">
+        Feedback was submitted, but no response details were included in the webhook payload.
+      </p>
+    `;
+  }
+
+  const renderedResponses = responses
+    .map((response) => {
+      const item = response as { question?: unknown; answer?: unknown };
+      const question = escapeHtml(item.question);
+      const answer = escapeHtml(item.answer);
+
+      return `
+        <div style="padding: 16px 0; border-top: 1px solid #e5e7eb;">
+          <p style="margin: 0 0 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${question}</p>
+          <p style="margin: 0; color: #374151; font-size: 14px; white-space: pre-wrap;">${answer || '<em>No answer provided</em>'}</p>
+        </div>
+      `;
+    })
+    .join('');
+
+  return `
+    <div style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 0 20px;">
+      ${renderedResponses}
+    </div>
+  `;
+};
+
 export async function sendEmail({
   to,
   subject,
@@ -247,6 +307,29 @@ export async function sendEmail({
         <p style="font-size: 14px; color: #6b7280; margin-top: 24px;">Thank you for being part of the CONNEXT community!</p>
       `,
       `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
+    ),
+
+    'mentor-feedback-submitted': (data) => getEmailWrapper(
+      `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">New Session Feedback</h2>`,
+      `
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${escapeHtml(data.mentorName || 'there')}</strong>,</p>
+        <p style="font-size: 16px; margin: 0 0 24px 0;">
+          ${escapeHtml(data.menteeName || 'A mentee')} submitted feedback for your session.
+        </p>
+
+        <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #2563eb;">
+          <h3 style="margin: 0 0 16px 0; color: #1d4ed8; font-size: 16px;">Session Details</h3>
+          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${escapeHtml(data.date || 'N/A')}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${escapeHtml(data.time || 'N/A')}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Submitted:</strong> ${formatIsoForEmail(data.submittedAt)}</p>
+        </div>
+
+        <div style="margin: 24px 0;">
+          <h3 style="margin: 0 0 16px 0; color: #111827; font-size: 16px;">Submitted Responses</h3>
+          ${renderFeedbackResponses(data.responses)}
+        </div>
+      `,
+      `<p style="margin: 0;">Â© 2026 CONNEXT. All rights reserved.</p>`
     ),
 
     'password-reset-code': (data) => getEmailWrapper(

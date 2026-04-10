@@ -1,19 +1,139 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { randomUUID } from 'crypto';
+
 import { database } from '@/lib/cosmos';
 import { sendEmail } from '@/lib/email';
-import { generateFeedbackFormUrl } from '@/lib/googleForm';
+import { createSignedFeedbackFormLink } from '@/lib/server/feedback-form';
+import { parseMeetingDateTime } from '@/lib/token-cycle';
 
-/**
- * API endpoint to send feedback forms to mentees whose sessions ended 2 hours ago
- * This should be called by a cron job every hour
- */
+const FEEDBACK_SEND_DELAY_MS = 2 * 60 * 60 * 1000;
+const FEEDBACK_VALID_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+type UserDoc = {
+  id: string;
+  mentorUID?: string;
+  mentee_id?: string;
+  scheduling?: any[];
+};
+
+type RequesterRecord = {
+  container: any;
+  doc: UserDoc;
+  scheduleIndex: number;
+};
+
+type DeliveryState = {
+  deliveredAt: string;
+  feedbackToken: string;
+  formUrl: string;
+};
+
+const isCancelledMeeting = (meeting: any): boolean => {
+  const status = String(meeting?.scheduled_status || '').trim().toLowerCase();
+  return status === 'cancelled' || status === 'canceled';
+};
+
+const shouldSendFeedbackForMeeting = (meeting: any, now: Date): boolean => {
+  if (meeting?.decision !== 'accepted' || isCancelledMeeting(meeting)) {
+    return false;
+  }
+
+  const meetingDateTime = parseMeetingDateTime(meeting.date, meeting.time);
+  if (!meetingDateTime) {
+    return false;
+  }
+
+  const opensAt = meetingDateTime.getTime() + FEEDBACK_SEND_DELAY_MS;
+  const closesAt = meetingDateTime.getTime() + FEEDBACK_VALID_WINDOW_MS;
+
+  return now.getTime() >= opensAt && now.getTime() <= closesAt;
+};
+
+const findMeetingIndex = (doc: UserDoc | null | undefined, meetingId: string): number => {
+  if (!Array.isArray(doc?.scheduling)) {
+    return -1;
+  }
+
+  return doc.scheduling.findIndex((meeting: any) => meeting?.meetingId === meetingId);
+};
+
+const getMeetingString = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const applyDeliveryState = (meeting: any, deliveryState: DeliveryState): boolean => {
+  let changed = false;
+
+  if (meeting.feedbackFormDelivered !== true) {
+    meeting.feedbackFormDelivered = true;
+    changed = true;
+  }
+
+  if (meeting.feedbackFormDeliveredAt !== deliveryState.deliveredAt) {
+    meeting.feedbackFormDeliveredAt = deliveryState.deliveredAt;
+    changed = true;
+  }
+
+  if (meeting.feedbackFormUrl !== deliveryState.formUrl) {
+    meeting.feedbackFormUrl = deliveryState.formUrl;
+    changed = true;
+  }
+
+  if (meeting.feedbackToken !== deliveryState.feedbackToken) {
+    meeting.feedbackToken = deliveryState.feedbackToken;
+    changed = true;
+  }
+
+  return changed;
+};
+
+const findRequesterRecord = (
+  menteeDocsById: Map<string, UserDoc>,
+  requesterMentorsByMenteeId: Map<string, UserDoc[]>,
+  menteeUid: string,
+  meetingId: string
+): RequesterRecord | null => {
+  const menteeDoc = menteeDocsById.get(menteeUid);
+  const menteeScheduleIndex = findMeetingIndex(menteeDoc, meetingId);
+  if (menteeDoc && menteeScheduleIndex !== -1) {
+    return {
+      container: database.container('mentee'),
+      doc: menteeDoc,
+      scheduleIndex: menteeScheduleIndex,
+    };
+  }
+
+  const requesterMentors = requesterMentorsByMenteeId.get(menteeUid) || [];
+  for (const requesterMentor of requesterMentors) {
+    const scheduleIndex = findMeetingIndex(requesterMentor, meetingId);
+    if (scheduleIndex !== -1) {
+      return {
+        container: database.container('mentor'),
+        doc: requesterMentor,
+        scheduleIndex,
+      };
+    }
+  }
+
+  return null;
+};
+
 export async function POST(request: NextRequest) {
   try {
-    // Optional: Add authentication to prevent unauthorized calls
     const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET || 'your-secret-key-here';
-    
+    const cronSecret = process.env.CRON_SECRET;
+
+    if (!cronSecret) {
+      return NextResponse.json(
+        { error: 'CRON_SECRET is not configured' },
+        { status: 500 }
+      );
+    }
+
     if (authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -22,124 +142,200 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date();
-    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
-    
-    console.log('Checking for sessions that started around:', twoHoursAgo.toISOString());
+    console.log('Checking for sessions that started around:', now.toISOString());
 
-    // Query both mentor and mentee containers for accepted meetings
     const mentorContainer = database.container('mentor');
     const menteeContainer = database.container('mentee');
+    const [{ resources: mentors }, { resources: mentees }] = await Promise.all([
+      mentorContainer.items.readAll().fetchAll(),
+      menteeContainer.items.readAll().fetchAll(),
+    ]);
+
+    const mentorDocsById = new Map<string, UserDoc>();
+    const mentorDocsByUid = new Map<string, UserDoc>();
+    const requesterMentorsByMenteeId = new Map<string, UserDoc[]>();
+    const menteeDocsById = new Map<string, UserDoc>();
+
+    for (const mentor of mentors as UserDoc[]) {
+      mentorDocsById.set(mentor.id, mentor);
+      if (mentor.mentorUID) {
+        mentorDocsByUid.set(mentor.mentorUID, mentor);
+      }
+
+      if (mentor.mentee_id) {
+        const current = requesterMentorsByMenteeId.get(mentor.mentee_id) || [];
+        current.push(mentor);
+        requesterMentorsByMenteeId.set(mentor.mentee_id, current);
+      }
+    }
+
+    for (const mentee of mentees as UserDoc[]) {
+      menteeDocsById.set(mentee.id, mentee);
+    }
 
     const sentForms: string[] = [];
-    const errors: any[] = [];
+    const errors: Array<{ meetingId: string; error: string }> = [];
+    const processedMeetingIds = new Set<string>();
 
-    // Helper function to process meetings
-    const processMeetings = async (container: any, role: 'mentor' | 'mentee') => {
-      const { resources: users } = await container.items.readAll().fetchAll();
+    for (const candidateDoc of mentors as UserDoc[]) {
+      if (!Array.isArray(candidateDoc.scheduling)) {
+        continue;
+      }
 
-      for (const user of users) {
-        if (!user.scheduling || !Array.isArray(user.scheduling)) continue;
+      for (const candidateMeeting of candidateDoc.scheduling) {
+        const meetingId = getMeetingString(candidateMeeting?.meetingId);
+        if (!meetingId || processedMeetingIds.has(meetingId)) {
+          continue;
+        }
+        processedMeetingIds.add(meetingId);
 
-        for (const meeting of user.scheduling) {
-          // Skip if not accepted or already cancelled
-          if (meeting.decision !== 'accepted' || meeting.scheduled_status === 'cancelled') {
+        try {
+          const targetMentorDoc =
+            mentorDocsByUid.get(candidateMeeting?.mentorUID) ||
+            mentorDocsById.get(candidateMeeting?.mentorUID) ||
+            (candidateDoc.mentorUID === candidateMeeting?.mentorUID || candidateDoc.id === candidateMeeting?.mentorUID
+              ? candidateDoc
+              : null);
+
+          if (!targetMentorDoc) {
+            throw new Error('Target mentor record not found');
+          }
+
+          const targetMeetingIndex = findMeetingIndex(targetMentorDoc, meetingId);
+          if (targetMeetingIndex === -1) {
+            throw new Error('Target mentor meeting not found');
+          }
+
+          const mentorMeeting = targetMentorDoc.scheduling?.[targetMeetingIndex];
+          if (!shouldSendFeedbackForMeeting(mentorMeeting, now)) {
             continue;
           }
 
-          // Skip if feedback form email was already sent
-          if (meeting.feedbackFormDelivered === true) {
+          if (!getMeetingString(mentorMeeting?.menteeUID)) {
+            throw new Error('Meeting requester is missing for this session');
+          }
+
+          const requesterRecord = findRequesterRecord(
+            menteeDocsById,
+            requesterMentorsByMenteeId,
+            mentorMeeting.menteeUID,
+            meetingId
+          );
+
+          if (!requesterRecord) {
+            throw new Error('Requester meeting record not found');
+          }
+
+          const requesterMeeting = requesterRecord.doc.scheduling?.[requesterRecord.scheduleIndex];
+          if (!requesterMeeting) {
+            throw new Error('Requester meeting details missing');
+          }
+
+          if (mentorMeeting.feedbackFormSent === true || requesterMeeting.feedbackFormSent === true) {
             continue;
           }
 
-          // Parse meeting date and time
-          const meetingDate = new Date(meeting.date);
-          const [hours, minutes] = meeting.time.split(':').map(Number);
-          meetingDate.setHours(hours, minutes, 0, 0);
+          const alreadyDelivered =
+            mentorMeeting.feedbackFormDelivered === true || requesterMeeting.feedbackFormDelivered === true;
+          const deliveredAt =
+            getMeetingString(mentorMeeting.feedbackFormDeliveredAt) ||
+            getMeetingString(requesterMeeting.feedbackFormDeliveredAt) ||
+            now.toISOString();
 
-          // Check if meeting started approximately 2 hours ago (within ±30 minutes window)
-          const timeDifference = Math.abs(now.getTime() - meetingDate.getTime() - 2 * 60 * 60 * 1000);
-          const thirtyMinutesInMs = 30 * 60 * 1000;
+          let feedbackToken =
+            getMeetingString(mentorMeeting.feedbackToken) || getMeetingString(requesterMeeting.feedbackToken);
+          let formUrl =
+            getMeetingString(mentorMeeting.feedbackFormUrl) || getMeetingString(requesterMeeting.feedbackFormUrl);
 
-          if (timeDifference <= thirtyMinutesInMs) {
-            try {
-              const scheduleIndex = user.scheduling.findIndex(
-                (m: any) => m.meetingId === meeting.meetingId
-              );
-              if (scheduleIndex === -1) {
-                continue;
-              }
+          if (!alreadyDelivered && (!feedbackToken || !formUrl)) {
+            const signedLink = createSignedFeedbackFormLink(
+              {
+                meetingId,
+                mentorUid: mentorMeeting.mentorUID,
+                menteeName: mentorMeeting.mentee_name || requesterMeeting.mentee_name || 'Mentee',
+                mentorName: mentorMeeting.mentor_name || candidateMeeting?.mentor_name || 'Mentor',
+                sessionDate: mentorMeeting.date,
+                sessionTime: mentorMeeting.time,
+              },
+              now
+            );
 
-              const existingToken = user.scheduling[scheduleIndex].feedbackTrackingToken;
-              const trackingToken =
-                typeof existingToken === 'string' && existingToken.trim().length > 0
-                  ? existingToken
-                  : randomUUID();
+            feedbackToken = signedLink.feedbackToken;
+            formUrl = signedLink.formUrl;
+          }
 
-              // Generate pre-filled form URL
-              const formUrl = generateFeedbackFormUrl({
-                menteeName: meeting.mentee_name,
-                mentorName: meeting.mentor_name,
-                sessionDate: meeting.date,
-                sessionTime: meeting.time,
-                trackingToken,
-              });
+          if (alreadyDelivered && (!feedbackToken || !formUrl)) {
+            throw new Error(
+              'Feedback delivery metadata is incomplete on existing records; refusing to regenerate a new signed link after delivery.'
+            );
+          }
 
-              // Send email to mentee
-              await sendEmail({
-                to: meeting.mentee_email,
-                subject: '📝 Your Session Feedback - Connext',
-                template: 'mentee-feedback-form',
-                data: {
-                  menteeName: meeting.mentee_name,
-                  mentorName: meeting.mentor_name,
-                  date: new Date(meeting.date).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  }),
-                  time: meeting.time,
-                  formUrl: formUrl
-                }
-              });
+          const deliveryState: DeliveryState = {
+            deliveredAt,
+            feedbackToken: feedbackToken as string,
+            formUrl: formUrl as string,
+          };
 
-              // Mark feedback form email as delivered in the database.
-              // Submission is tracked separately through the verification webhook.
-              if (scheduleIndex !== -1) {
-                user.scheduling[scheduleIndex].feedbackFormDelivered = true;
-                user.scheduling[scheduleIndex].feedbackFormDeliveredAt = now.toISOString();
-                user.scheduling[scheduleIndex].feedbackFormUrl = formUrl; // Store the form URL
-                user.scheduling[scheduleIndex].feedbackTrackingToken = trackingToken;
-                
-                await container.item(user.id, user.id).replace(user);
-              }
-
-              sentForms.push(`${meeting.meetingId} (${meeting.mentee_name})`);
-              console.log(`Feedback form sent for meeting ${meeting.meetingId}`);
-            } catch (error) {
-              console.error(`Error sending feedback form for meeting ${meeting.meetingId}:`, error);
-              errors.push({
-                meetingId: meeting.meetingId,
-                error: (error as Error).message
-              });
+          if (!alreadyDelivered) {
+            const menteeEmail = mentorMeeting.mentee_email || requesterMeeting.mentee_email;
+            if (!getMeetingString(menteeEmail)) {
+              throw new Error('Mentee email is missing for this meeting');
             }
+
+            await sendEmail({
+              to: menteeEmail,
+              subject: 'Your Session Feedback - Connext',
+              template: 'mentee-feedback-form',
+              data: {
+                menteeName: mentorMeeting.mentee_name || requesterMeeting.mentee_name || 'there',
+                mentorName: mentorMeeting.mentor_name || 'your mentor',
+                date: new Date(mentorMeeting.date).toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                }),
+                time: mentorMeeting.time,
+                formUrl: deliveryState.formUrl,
+              },
+            });
           }
+
+          const mentorChanged = applyDeliveryState(mentorMeeting, deliveryState);
+          const requesterChanged = applyDeliveryState(requesterMeeting, deliveryState);
+
+          if (mentorChanged) {
+            await mentorContainer.item(targetMentorDoc.id, targetMentorDoc.id).replace(targetMentorDoc);
+          }
+
+          if (requesterChanged) {
+            await requesterRecord.container
+              .item(requesterRecord.doc.id, requesterRecord.doc.id)
+              .replace(requesterRecord.doc);
+          }
+
+          if (!alreadyDelivered) {
+            sentForms.push(`${meetingId} (${mentorMeeting.mentee_name || 'unknown mentee'})`);
+            console.log(`Feedback form sent for meeting ${meetingId}`);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown feedback delivery error';
+          console.error(`Error processing feedback form for meeting ${meetingId}:`, error);
+          errors.push({
+            meetingId,
+            error: message,
+          });
         }
       }
-    };
-
-    // Process both containers
-    await processMeetings(mentorContainer, 'mentor');
-    await processMeetings(menteeContainer, 'mentee');
+    }
 
     return NextResponse.json({
       success: true,
       sentCount: sentForms.length,
       sentForms,
       errors: errors.length > 0 ? errors : undefined,
-      checkedAt: now.toISOString()
+      checkedAt: now.toISOString(),
     });
-
   } catch (error) {
     console.error('Error in send-feedback endpoint:', error);
     return NextResponse.json(
@@ -149,11 +345,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * GET endpoint to manually trigger feedback form sending (for testing)
- * Remove or secure this in production
- */
 export async function GET(request: NextRequest) {
-  // For testing purposes - you can call this endpoint manually
   return POST(request);
 }

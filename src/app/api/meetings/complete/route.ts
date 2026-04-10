@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
+import { buildDirectFeedbackRecord } from '@/lib/meeting-feedback';
 import { getTokenCycleEvaluateAtIso, parseMeetingDateTime } from '@/lib/token-cycle';
 
 export async function POST(req: NextRequest) {
@@ -89,11 +90,7 @@ export async function POST(req: NextRequest) {
 
           // Update feedback in mentee container
           const submittedAt = new Date().toISOString();
-          const feedbackData = {
-            rating: rating || null,
-            feedback: feedback || '',
-            submittedAt,
-          };
+          const feedbackData = buildDirectFeedbackRecord(feedback || '', rating || null, submittedAt);
 
           menteeResource.scheduling[meetingIndex].feedback_form = feedbackData;
           menteeResource.scheduling[meetingIndex].feedbackFormSent = true;
@@ -101,6 +98,7 @@ export async function POST(req: NextRequest) {
           if (menteeResource.token_cycle?.status === 'pending' && menteeResource.token_cycle.meetingId === meetingId) {
             menteeResource.token_cycle.feedbackSubmittedAt = submittedAt;
             menteeResource.token_cycle.feedbackValid = true;
+            menteeResource.token_cycle.feedbackVerificationSource = 'direct-feedback';
           }
           await menteeContainer.item(menteeId, menteeId).replace(menteeResource);
 
@@ -175,11 +173,7 @@ export async function POST(req: NextRequest) {
 
             // Update feedback
             const submittedAt = new Date().toISOString();
-            const feedbackData = {
-              rating: rating || null,
-              feedback: feedback || '',
-              submittedAt,
-            };
+            const feedbackData = buildDirectFeedbackRecord(feedback || '', rating || null, submittedAt);
 
             mentorRequester.scheduling[meetingIndex].feedback_form = feedbackData;
             mentorRequester.scheduling[meetingIndex].feedbackFormSent = true;
@@ -187,6 +181,7 @@ export async function POST(req: NextRequest) {
             if (mentorRequester.token_cycle?.status === 'pending' && mentorRequester.token_cycle.meetingId === meetingId) {
               mentorRequester.token_cycle.feedbackSubmittedAt = submittedAt;
               mentorRequester.token_cycle.feedbackValid = true;
+              mentorRequester.token_cycle.feedbackVerificationSource = 'direct-feedback';
             }
             await mentorContainer
               .item(mentorRequester.id, mentorRequester.id)

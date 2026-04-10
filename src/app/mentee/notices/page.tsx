@@ -30,7 +30,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generateFeedbackFormUrl } from '@/lib/googleForm';
 
 interface MeetingRequest {
   meetingId: string;
@@ -1136,32 +1135,27 @@ export default function MenteeNoticesPage() {
                 <>
                   <Button 
                     onClick={async () => {
-                      let formUrl = selectedTask.feedbackFormUrl;
-                      
-                      // Generate URL on the fly if not present
-                      if (!formUrl && user) {
-                        formUrl = generateFeedbackFormUrl({
-                          menteeName: user.name || user.mentee_name || 'Mentee',
-                          mentorName: selectedTask.mentorName,
-                          sessionDate: selectedTask.date,
-                          sessionTime: selectedTask.time
-                        });
-                      }
-                      
-                      if (formUrl) {
-                        // Open form and close dialog
+                      const formUrl = selectedTask.feedbackFormUrl;
+
+                      if (!formUrl) {
                         toast({
-                          title: "Feedback Form Opened",
-                          description: "The button will disappear only after you submit the Google Form.",
+                          variant: 'destructive',
+                          title: 'Feedback link unavailable',
+                          description: 'The signed feedback link has not been issued yet. Refresh after the feedback email job runs.',
                         });
-                        window.open(formUrl, '_blank');
-                        setIsDialogOpen(false);
-                        
-                        // Refresh tasks after a short delay
-                        setTimeout(() => {
-                          fetchTasks();
-                        }, 1000);
+                        return;
                       }
+
+                      toast({
+                        title: "Feedback Form Opened",
+                        description: "The button will disappear only after you submit the Google Form.",
+                      });
+                      window.open(formUrl, '_blank');
+                      setIsDialogOpen(false);
+
+                      setTimeout(() => {
+                        fetchTasks();
+                      }, 1000);
                     }}
                     className="flex-1 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 h-11 shadow-md"
                   >
