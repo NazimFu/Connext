@@ -6,7 +6,7 @@ import { clampToken, evaluateTokenCycleForUser, getTokenCycleEvaluateAtIso } fro
 export async function POST(request: Request) {
   try {
     const { email } = await request.json();
-    
+
     if (!email) {
       return NextResponse.json({ message: "Email is required" }, { status: 400 });
     }
@@ -14,12 +14,7 @@ export async function POST(request: Request) {
     const mentorContainer = database.container('mentor');
     const querySpec = {
       query: "SELECT * FROM c WHERE c.mentor_email = @email",
-      parameters: [
-        {
-          name: "@email",
-          value: email
-        }
-      ]
+      parameters: [{ name: "@email", value: email }]
     };
 
     const { resources: mentors } = await mentorContainer.items
@@ -35,8 +30,7 @@ export async function POST(request: Request) {
     if (evalResult.changed) {
       await mentorContainer.item(mentor.id, mentor.id).replace(mentor);
     }
-    
-    // Convert mentor document to User format
+
     const user: User = {
       id: mentor.mentorUID,
       name: mentor.mentor_name,
@@ -48,6 +42,7 @@ export async function POST(request: Request) {
       tokens: clampToken(mentor.tokens),
       token_cycle: mentor.token_cycle,
       tokenReplenishAt: getTokenCycleEvaluateAtIso(mentor.token_cycle?.tokenUsedAt),
+      timezone: mentor.timezone || 'Asia/Kuala_Lumpur',   // ← include timezone
     };
 
     return NextResponse.json(user);

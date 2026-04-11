@@ -14,12 +14,7 @@ export async function POST(request: Request) {
     const menteeContainer = database.container('mentee');
     const querySpec = {
       query: "SELECT * FROM c WHERE c.mentee_email = @email",
-      parameters: [
-        {
-          name: "@email",
-          value: email
-        }
-      ]
+      parameters: [{ name: "@email", value: email }]
     };
 
     const { resources: mentees } = await menteeContainer.items
@@ -35,19 +30,12 @@ export async function POST(request: Request) {
     if (evalResult.changed) {
       await menteeContainer.item(mentee.id, mentee.id).replace(mentee);
     }
-    console.log('Auth mentee - Found mentee document:', {
-      id: mentee.id,
-      menteeUID: mentee.menteeUID,
-      mentee_email: mentee.mentee_email,
-      mentee_name: mentee.mentee_name
-    });
 
-    // Map DB fields to User shape
     const user: User = {
-      id: mentee.id, // Use the actual document ID, not menteeUID
+      id: mentee.id,
       name: mentee.mentee_name,
       email: mentee.mentee_email,
-      image: mentee.mentee_photo, // or undefined if not present
+      image: mentee.mentee_photo,
       role: 'mentee',
       verified: mentee.verified ?? false,
       verificationStatus: mentee.verificationStatus ?? 'not-submitted',
@@ -58,7 +46,8 @@ export async function POST(request: Request) {
       github: mentee.github,
       cv_link: mentee.cv_link,
       attachmentPath: mentee.attachmentPath,
-      allowCVShare: mentee.allowCVShare ?? false
+      allowCVShare: mentee.allowCVShare ?? false,
+      timezone: mentee.timezone || 'Asia/Kuala_Lumpur',   // ← include timezone
     };
 
     return NextResponse.json(user);

@@ -29,6 +29,8 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ImageCropper } from '@/components/ui/image-cropper';
+import { TimezoneSelector } from "@/components/ui/timezone-selector";
+import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 
 // ============================================
 // TAG INPUT COMPONENT
@@ -42,7 +44,7 @@ interface TagInputProps {
 
 function TagInput({ tags, setTags, placeholder, accentColor }: TagInputProps) {
   const [inputValue, setInputValue] = useState('');
-
+  
   const colorClasses = {
     purple: {
       bg: 'bg-purple-100',
@@ -261,7 +263,7 @@ function ScheduleSelector({ schedule, setSchedule }: ScheduleSelectorProps) {
               className={`rounded-xl border-2 transition-all duration-200 overflow-hidden ${
                 isActive
                   ? 'border-emerald-300 bg-gradient-to-r from-emerald-50/50 to-teal-50/50'
-                  : 'border-gray-400 bg-gray-50/50 hover:border-gray-500'
+                  : 'border-neutral-200 bg-gray-50/50 hover:border-gray-500'
               }`}
             >
               {/* Day Header */}
@@ -274,7 +276,7 @@ function ScheduleSelector({ schedule, setSchedule }: ScheduleSelectorProps) {
                   <div
                     className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm transition-colors ${
                       isActive
-                        ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/30'
+                        ? 'bg-yellow-100 text-yellow-600 shadow-lg shadow-emerald-500/30'
                         : 'bg-gray-200 text-gray-500'
                     }`}
                   >
@@ -317,7 +319,7 @@ function ScheduleSelector({ schedule, setSchedule }: ScheduleSelectorProps) {
 
               {/* Expanded Content */}
               {isExpanded && (
-                <div className="px-4 pb-4 border-t border-gray-400 pt-4 space-y-4 animate-in slide-in-from-top-2 duration-200">
+                <div className="px-4 pb-4 border-t border-neutral-200 pt-4 space-y-4 animate-in slide-in-from-top-2 duration-200">
                   {/* Quick Presets */}
                   <div className="flex flex-wrap gap-2">
                     {TIME_PRESETS.map(preset => (
@@ -325,7 +327,7 @@ function ScheduleSelector({ schedule, setSchedule }: ScheduleSelectorProps) {
                         key={preset.label}
                         type="button"
                         onClick={() => addPresetTimes(day, preset.times)}
-                        className="px-3 py-1.5 text-xs font-medium bg-white border border-gray-400 rounded-lg text-gray-600 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 transition-all shadow-sm hover:shadow"
+                        className="px-3 py-1.5 text-xs font-medium bg-white border border-neutral-200 rounded-lg text-neutral-500 hover:border-emerald-300 hover:text-emerald-600 hover:bg-emerald-50 transition-all shadow-sm hover:shadow"
                       >
                         + {preset.label}
                       </button>
@@ -353,7 +355,7 @@ function ScheduleSelector({ schedule, setSchedule }: ScheduleSelectorProps) {
                           className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-150 ${
                             isSelected
                               ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/25 scale-105'
-                              : 'bg-white border border-gray-400 text-gray-600 hover:border-emerald-300 hover:text-emerald-600 shadow-sm'
+                              : 'bg-white border border-neutral-200 text-neutral-500 hover:border-emerald-300 hover:text-emerald-600 shadow-sm'
                           }`}
                         >
                           {formatTime(time)}
@@ -363,13 +365,13 @@ function ScheduleSelector({ schedule, setSchedule }: ScheduleSelectorProps) {
                   </div>
 
                   {/* Custom Time Input */}
-                  <div className="flex items-center gap-2 pt-2 border-t border-gray-400">
+                  <div className="flex items-center gap-2 pt-2 border-t border-neutral-200">
                     <span className="text-sm text-gray-500">Custom:</span>
                     <input
                       type="time"
                       value={customTimeInput[day] || ''}
                       onChange={(e) => setCustomTimeInput(prev => ({ ...prev, [day]: e.target.value }))}
-                      className="px-3 py-1.5 border border-gray-400 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                      className="px-3 py-1.5 border border-neutral-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                     />
                     <Button
                       type="button"
@@ -384,7 +386,7 @@ function ScheduleSelector({ schedule, setSchedule }: ScheduleSelectorProps) {
 
                   {/* Selected Times Summary */}
                   {daySlots.length > 0 && (
-                    <div className="pt-2 border-t border-gray-400">
+                    <div className="pt-2 border-t border-neutral-200">
                       <p className="text-xs text-gray-500 mb-2">Selected times (click to remove):</p>
                       <div className="flex flex-wrap gap-1.5">
                         {daySlots.sort().map(time => (
@@ -417,10 +419,10 @@ function ScheduleSelector({ schedule, setSchedule }: ScheduleSelectorProps) {
 export default function MentorProfileEditPage() {
   return (
     <Suspense fallback={
-      <div className="flex justify-center items-center h-screen bg-gradient-to-br from-yellow-50 via-white to-amber-50">
+      <div className="flex justify-center items-center h-screen bg-yellow-100">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-yellow-600 mx-auto mb-4" />
-          <p className="text-gray-600 font-medium">Loading your profile...</p>
+          <p className="text-neutral-500 font-medium">Loading your profile...</p>
         </div>
       </div>
     }>
@@ -462,6 +464,8 @@ function MentorProfileEdit() {
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [isUploadingCV, setIsUploadingCV] = useState(false);
   const [allowCVShare, setAllowCVShare] = useState(false);
+
+  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
 
   // Email change dialog states
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
@@ -547,6 +551,8 @@ function MentorProfileEdit() {
 
         // Set allowCVShare from database
         setAllowCVShare(mentorData.allowCVShare ?? false);
+
+        setTimezone(mentorData.timezone || DEFAULT_TIMEZONE);
 
         // Convert available_slots to schedule format
         if (mentorData.available_slots && Array.isArray(mentorData.available_slots)) {
@@ -779,6 +785,7 @@ function MentorProfileEdit() {
         ...formData,
         available_slots: availableSlots,
         allowCVShare: allowCVShare,
+        timezone: timezone,
       };
 
       console.log('Full payload being sent:', payload);
@@ -906,20 +913,20 @@ function MentorProfileEdit() {
 
   if (isLoading || !user || isLoadingProfile) {
     return (
-      <div className="flex justify-center items-center h-screen bg-gray-100">
+      <div className="flex justify-center items-center h-screen bg-neutral-50">
         <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-gray-600 mx-auto mb-4" />
-          <p className="text-gray-600 font-medium">Loading your profile...</p>
+          <Loader2 className="h-12 w-12 animate-spin text-neutral-500 mx-auto mb-4" />
+          <p className="text-neutral-500 font-medium">Loading your profile...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
+    <div className="min-h-screen bg-neutral-50 p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="bg-white border border-gray-400 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-400 font-semibold text-lg">
+        <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-neutral-200 font-semibold text-lg">
             Edit Your Profile
           </div>
           <motion.div
@@ -935,54 +942,54 @@ function MentorProfileEdit() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
         >
-          <Card className="mb-6 border-yellow-200 shadow-lg hover:shadow-xl transition-shadow">
+          <Card className="mb-6 border border-neutral-200 shadow-sm transition-shadow">
             <CardContent className="p-6">
               <div className="flex flex-col md:flex-row items-center gap-6">
                 <div className="relative group">
-                  <Avatar className="h-32 w-32 ring-4 ring-yellow-200 ring-offset-4 transition-all group-hover:ring-yellow-400 group-hover:scale-105">
+                  <Avatar className="h-32 w-32 ring-2 ring-neutral-200 ring-offset-2 transition-all group-hover:ring-yellow-400 group-hover:scale-105">
                     <AvatarImage 
                       src={formData.mentor_photo?.startsWith('data:') 
                         ? formData.mentor_photo 
                         : getGoogleDriveImageUrl(formData.mentor_photo)} 
                       alt={formData.mentor_name || 'Mentor'}
                     />
-                    <AvatarFallback className="bg-gradient-to-br from-yellow-400 to-amber-500 text-white text-3xl font-bold">
+                    <AvatarFallback className="bg-yellow-100 text-yellow-600 text-3xl font-bold">
                       {formData.mentor_name?.slice(0, 2).toUpperCase() || 'MN'}
                     </AvatarFallback>
                   </Avatar>
                   <Button 
                     size="icon" 
-                    className="absolute -bottom-2 -right-2 h-10 w-10 rounded-full bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 shadow-lg"
+                    className="absolute -bottom-2 -right-2 h-10 w-10 rounded-full bg-yellow-500 hover:bg-yellow-600 hover:from-yellow-600 hover:to-amber-700 shadow-lg"
                     onClick={() => setProfileCropperOpen(true)}
                   >
                     <Camera className="h-5 w-5" />
                   </Button>
-                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse"></div>
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></div>
                 </div>
                 <div className="flex-1 text-center md:text-left">
                   <h2 className="text-2xl font-bold text-gray-900 mb-1">
                     {formData.mentor_name || 'Mentor Name'}
                   </h2>
-                  <p className="text-gray-600 mb-3">{formData.mentor_email}</p>
+                  <p className="text-neutral-500 mb-3">{formData.mentor_email}</p>
                   <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-                    <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
+                    <Badge className="bg-neutral-100 text-neutral-700 border-neutral-200">
                       <Star className="w-3 h-3 mr-1" />
                       Mentor
                     </Badge>
                     {formData.specialization.length > 0 && (
-                      <Badge className="bg-blue-100 text-blue-800 border-blue-300">
+                      <Badge className="bg-neutral-100 text-neutral-700 border-neutral-200 border-blue-300">
                         <Target className="w-3 h-3 mr-1" />
                         {formData.specialization.length} Specialization{formData.specialization.length > 1 ? 's' : ''}
                       </Badge>
                     )}
                     {formData.experience.length > 0 && (
-                      <Badge className="bg-green-100 text-green-800 border-green-300">
+                      <Badge className="bg-neutral-100 text-neutral-700 border-neutral-200">
                         <Briefcase className="w-3 h-3 mr-1" />
                         {formData.experience.length} Experience{formData.experience.length > 1 ? 's' : ''}
                       </Badge>
                     )}
                     {Object.keys(schedule).length > 0 && (
-                      <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300">
+                      <Badge className="bg-neutral-100 text-neutral-700 border-neutral-200">
                         <Calendar className="w-3 h-3 mr-1" />
                         {Object.values(schedule).flat().length} Time Slots
                       </Badge>
@@ -1000,17 +1007,17 @@ function MentorProfileEdit() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
         >
-          <Card className="border-yellow-200 shadow-lg">
+          <Card className="border border-neutral-200 shadow-sm">
             <CardContent className="p-6 md:p-8 space-y-8">
               {/* Basic Information */}
               <div className="space-y-6">
                 <div className="flex items-center gap-3 pb-3 border-b border-yellow-100">
-                  <div className="p-2 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-lg">
-                    <User className="h-5 w-5 text-white" />
+                  <div className="p-2 bg-yellow-100 rounded-lg">
+                    <User className="h-5 w-5 text-yellow-600" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-xl text-gray-900">Basic Information</h3>
-                    <p className="text-sm text-gray-600">Your personal details</p>
+                    <h3 className="text-lg font-semibold text-neutral-900">Basic Information</h3>
+                    <p className="text-sm text-neutral-500">Your personal details</p>
                   </div>
                 </div>
                 <div className="grid md:grid-cols-2 gap-6">
@@ -1023,7 +1030,7 @@ function MentorProfileEdit() {
                       value={formData.mentor_name}
                       onChange={(e) => setFormData(prev => ({ ...prev, mentor_name: e.target.value }))}
                       placeholder="Enter your full name"
-                      className="border-gray-400 focus:border-yellow-400 focus:ring-yellow-400/20"
+                      className="border-neutral-200 focus:border-yellow-400 focus:ring-yellow-400/20"
                       required
                     />
                   </div>
@@ -1038,14 +1045,14 @@ function MentorProfileEdit() {
                         id="mentor_email"
                         value={formData.mentor_email}
                         disabled
-                        className="bg-gray-50 border-gray-400 text-gray-500 flex-1"
+                        className="bg-gray-50 border-neutral-200 text-gray-500 flex-1"
                       />
                       <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
                         <DialogTrigger asChild>
                           <Button 
                             variant="outline" 
                             size="sm"
-                            className="whitespace-nowrap border-blue-300 text-blue-600 hover:bg-blue-50"
+                            className="whitespace-nowrap border-neutral-200 text-neutral-700 hover:bg-neutral-50"
                           >
                             <Mail className="h-4 w-4 mr-2" />
                             Change
@@ -1115,7 +1122,7 @@ function MentorProfileEdit() {
                                 <div className="flex items-center justify-between text-sm">
                                   <div className="flex items-center gap-2">
                                     <Clock className="h-4 w-4 text-orange-500" />
-                                    <span className={`font-medium ${countdown < 60 ? 'text-red-600' : 'text-gray-600'}`}>
+                                    <span className={`font-medium ${countdown < 60 ? 'text-red-600' : 'text-neutral-500'}`}>
                                       {formatCountdownTime(countdown)}
                                     </span>
                                   </div>
@@ -1140,7 +1147,7 @@ function MentorProfileEdit() {
                                 <h3 className="text-lg font-semibold text-gray-900 mb-2">
                                   Email Updated Successfully!
                                 </h3>
-                                <p className="text-sm text-gray-600">
+                                <p className="text-sm text-neutral-500">
                                   Your email has been changed to
                                 </p>
                                 <p className="text-sm font-medium text-blue-600 mt-1">
@@ -1159,7 +1166,7 @@ function MentorProfileEdit() {
                                 <Button
                                   onClick={handleSendVerificationCode}
                                   disabled={isSendingCode || !newEmailInput.trim()}
-                                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+                                  className="bg-yellow-500 hover:bg-yellow-600 text-white"
                                 >
                                   {isSendingCode ? (
                                     <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sending...</>
@@ -1177,7 +1184,7 @@ function MentorProfileEdit() {
                                 <Button
                                   onClick={handleVerifyCode}
                                   disabled={isVerifyingCode || verificationCode.length !== 6}
-                                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+                                  className="bg-yellow-500 hover:bg-yellow-600 text-white"
                                 >
                                   {isVerifyingCode ? (
                                     <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Verifying...</>
@@ -1210,7 +1217,7 @@ function MentorProfileEdit() {
                       value={formData.linkedin}
                       onChange={(e) => setFormData(prev => ({ ...prev, linkedin: e.target.value }))}
                       placeholder="https://linkedin.com/in/yourprofile"
-                      className="border-gray-400 focus:border-yellow-400 focus:ring-yellow-400/20"
+                      className="border-neutral-200 focus:border-yellow-400 focus:ring-yellow-400/20"
                     />
                     <p className="text-xs text-gray-500">Your LinkedIn profile URL</p>
                   </div>
@@ -1224,7 +1231,7 @@ function MentorProfileEdit() {
                       value={formData.github}
                       onChange={(e) => setFormData(prev => ({ ...prev, github: e.target.value }))}
                       placeholder="https://github.com/yourusername"
-                      className="border-gray-400 focus:border-yellow-400 focus:ring-yellow-400/20"
+                      className="border-neutral-200 focus:border-yellow-400 focus:ring-yellow-400/20"
                     />
                     <p className="text-xs text-gray-500">Your GitHub profile URL</p>
                   </div>
@@ -1240,14 +1247,14 @@ function MentorProfileEdit() {
                       value={formData.mentor_photo?.startsWith('data:') ? '(Cropped Image)' : formData.mentor_photo}
                       onChange={(e) => setFormData(prev => ({ ...prev, mentor_photo: e.target.value }))}
                       placeholder="https://example.com/your-photo.jpg"
-                      className="border-gray-400 focus:border-yellow-400 focus:ring-yellow-400/20 flex-1"
+                      className="border-neutral-200 focus:border-yellow-400 focus:ring-yellow-400/20 flex-1"
                       disabled={formData.mentor_photo?.startsWith('data:')}
                     />
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => setProfileCropperOpen(true)}
-                      className="whitespace-nowrap border-yellow-300 text-yellow-600 hover:bg-yellow-50"
+                      className="whitespace-nowrap border-neutral-200 text-neutral-700 hover:bg-neutral-50"
                     >
                       <CropIcon className="h-4 w-4 mr-2" />
                       Crop Image
@@ -1293,14 +1300,14 @@ function MentorProfileEdit() {
                       type="file"
                       accept=".pdf"
                       onChange={(e) => setCvFile(e.target.files?.[0] || null)}
-                      className="border-gray-400 focus:border-yellow-400 focus:ring-yellow-400/20"
+                      className="border-neutral-200 focus:border-yellow-400 focus:ring-yellow-400/20"
                       disabled={isUploadingCV}
                     />
                     <Button
                       type="button"
                       onClick={handleCVUpload}
                       disabled={!cvFile || isUploadingCV}
-                      className="bg-blue-600 hover:bg-blue-700 whitespace-nowrap"
+                      className="bg-neutral-900 hover:bg-neutral-800 text-white whitespace-nowrap"
                     >
                       {isUploadingCV ? (
                         <>
@@ -1432,7 +1439,7 @@ function MentorProfileEdit() {
                             }}
                             onFocus={() => setShowSuggestions(newInstitutionName.length > 0)}
                             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                            className="border-gray-400 focus:border-yellow-400 focus:ring-yellow-400/20"
+                            className="border-neutral-200 focus:border-yellow-400 focus:ring-yellow-400/20"
                           />
                           {showSuggestions && institutionSuggestions.length > 0 && (
                             <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
@@ -1470,7 +1477,7 @@ function MentorProfileEdit() {
                             placeholder="https://example.com/logo.jpg or Google Drive link"
                             value={newInstitutionUrl}
                             onChange={(e) => setNewInstitutionUrl(e.target.value)}
-                            className="border-gray-400 focus:border-yellow-400 focus:ring-yellow-400/20 flex-1"
+                            className="border-neutral-200 focus:border-yellow-400 focus:ring-yellow-400/20 flex-1"
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
@@ -1509,7 +1516,7 @@ function MentorProfileEdit() {
                                 });
                               }
                             }}
-                            className="whitespace-nowrap border-gray-400 text-gray-600 hover:bg-gray-100"
+                            className="whitespace-nowrap border-neutral-200 text-neutral-500 hover:bg-neutral-50"
                           >
                             Add
                           </Button>
@@ -1543,15 +1550,30 @@ function MentorProfileEdit() {
                 </div>
               </div>
 
+              {/* Timezone Preference */}
+              <div className="space-y-6">
+                <div className="flex items-center gap-3 pb-3 border-b border-yellow-100">
+                  <div className="p-2 bg-yellow-100 rounded-lg">
+                    <svg className="h-5 w-5 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-neutral-900">Timezone Preference</h3>
+                    <p className="text-sm text-neutral-500">Meeting times will display in your chosen timezone</p>
+                  </div>
+                </div>
+                <TimezoneSelector value={timezone} onChange={setTimezone} />
+              </div>
               {/* Biography */}
               <div className="space-y-6">
                 <div className="flex items-center gap-3 pb-3 border-b border-yellow-100">
-                  <div className="p-2 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg">
-                    <BookOpen className="h-5 w-5 text-white" />
+                  <div className="p-2 bg-yellow-100 rounded-lg">
+                    <BookOpen className="h-5 w-5 text-yellow-600" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-xl text-gray-900">About You</h3>
-                    <p className="text-sm text-gray-600">Tell your story and what makes you unique</p>
+                    <h3 className="text-lg font-semibold text-neutral-900">About You</h3>
+                    <p className="text-sm text-neutral-500">Tell your story and what makes you unique</p>
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -1564,7 +1586,7 @@ function MentorProfileEdit() {
                     onChange={(e) => setFormData(prev => ({ ...prev, biography: e.target.value }))}
                     placeholder="Tell mentees about yourself, your background, and what you can help them with..."
                     rows={6}
-                    className="border-gray-400 focus:border-blue-400 focus:ring-blue-400/20 resize-none"
+                    className="border-neutral-200 focus:border-blue-400 focus:ring-blue-400/20 resize-none"
                     required
                   />
                   <p className="text-xs text-gray-500">
@@ -1576,12 +1598,12 @@ function MentorProfileEdit() {
               {/* Expertise - Now with TagInput */}
               <div className="space-y-6">
                 <div className="flex items-center gap-3 pb-3 border-b border-yellow-100">
-                  <div className="p-2 bg-gradient-to-br from-purple-400 to-purple-600 rounded-lg">
-                    <Target className="h-5 w-5 text-white" />
+                  <div className="p-2 bg-yellow-100 rounded-lg">
+                    <Target className="h-5 w-5 text-yellow-600" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-xl text-gray-900">Expertise</h3>
-                    <p className="text-sm text-gray-600">Share your areas of knowledge and specialization</p>
+                    <h3 className="text-lg font-semibold text-neutral-900">Expertise</h3>
+                    <p className="text-sm text-neutral-500">Share your areas of knowledge and specialization</p>
                   </div>
                 </div>
 
@@ -1628,12 +1650,12 @@ function MentorProfileEdit() {
               {/* Professional Background */}
               <div className="space-y-6">
                 <div className="flex items-center gap-3 pb-3 border-b border-yellow-100">
-                  <div className="p-2 bg-gradient-to-br from-green-400 to-green-600 rounded-lg">
-                    <Briefcase className="h-5 w-5 text-white" />
+                  <div className="p-2 bg-yellow-100 rounded-lg">
+                    <Briefcase className="h-5 w-5 text-yellow-600" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-xl text-gray-900">Professional Background</h3>
-                    <p className="text-sm text-gray-600">Your journey and accomplishments</p>
+                    <h3 className="text-lg font-semibold text-neutral-900">Professional Background</h3>
+                    <p className="text-sm text-neutral-500">Your journey and accomplishments</p>
                   </div>
                 </div>
                 
@@ -1667,11 +1689,11 @@ function MentorProfileEdit() {
               {/* Availability Schedule - NEW SECTION */}
               <div className="space-y-6">
                 <div className="flex items-center gap-3 pb-3 border-b border-yellow-100">
-                  <div className="p-2 bg-gradient-to-br from-emerald-400 to-teal-600 rounded-lg">
-                    <Calendar className="h-5 w-5 text-white" />
+                  <div className="p-2 bg-yellow-100 rounded-lg">
+                    <Calendar className="h-5 w-5 text-yellow-600" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-xl text-gray-900">Availability Schedule</h3>
+                    <h3 className="text-lg font-semibold text-neutral-900">Availability Schedule</h3>
                     <p className="text-sm text-gray-600">Set your available time slots for mentoring sessions</p>
                   </div>
                 </div>
@@ -1684,7 +1706,8 @@ function MentorProfileEdit() {
                 <Button 
                   onClick={handleSave} 
                   size="lg" 
-                  className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-white font-semibold shadow-lg hover:shadow-xl transition-all text-lg py-6"
+                  className="w-full bg-yellow-500 hover:bg-yellow-600 hover:from-yellow-600 hover:to-amber-700 
+                  text-white font-semibold shadow-lg transition-all text-lg py-6"
                   disabled={isSaving}
                 >
                   {isSaving ? (

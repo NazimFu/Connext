@@ -111,6 +111,7 @@ export type User = {
   cv_link?: string;
   attachmentPath?: string;
   allowCVShare?: boolean;
+  timezone?: string;
 };
 
 export type Mentee = {
@@ -123,6 +124,7 @@ export type Mentee = {
   mentee_age: string;
   mentee_occupation: string;
   mentee_institution: string;
+  timezone?: string;
   role: string;
   verified: boolean;
   verificationStatus: 'not-submitted' | 'pending' | 'just-approved' | 'approved' | 'rejected';
@@ -168,6 +170,7 @@ export type Mentor = {
   experience: string[] | string;
   skills: string[] | string;
   achievement: string[] | string;
+  timezone?: string;
   verified: boolean;
   verificationStatus: 'not-submitted' | 'pending' | 'just-approved' | 'approved' | 'rejected';
   tokens: number;
