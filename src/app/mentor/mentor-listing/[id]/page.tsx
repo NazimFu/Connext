@@ -298,10 +298,88 @@ export default function MentorDetailPage() {
   return (
     <div className="container mx-auto max-w-6xl px-6 py-16">
       <div className="grid md:grid-cols-5 gap-10">
-        {/* Mentor Card - unchanged */}
+        {/* Mentor Card */}
         <Card className="md:col-span-3 rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          {/* ... your existing mentor card JSX ... */}
-          {/* (I omitted it for brevity - keep it as is) */}
+          <CardContent className="p-0">
+            <div className="h-20 bg-gradient-to-r from-gray-800 to-gray-900 rounded-t-xl" />
+            <div className="-mt-14 px-6 pb-8 text-center">
+              <Avatar className="mx-auto h-32 w-32 border-4 border-white shadow-sm">
+                <AvatarImage src={mentorData.image} />
+                <AvatarFallback className="bg-gradient-to-br from-gray-700 to-gray-900 text-white text-3xl font-bold">{mentorData.name?.[0]}</AvatarFallback>
+              </Avatar>
+              <h1 className="mt-4 text-2xl font-semibold text-gray-900">{mentorData.name}</h1>
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
+                {(Array.isArray(mentor?.experience) ? mentor.experience : mentor?.experience ? [mentor.experience] : []).map((e, i) => (
+                  <Badge key={i} className="bg-gray-100 text-gray-700 border border-gray-200">{e}</Badge>
+                ))}
+              </div>
+              <p className="mt-4 text-sm leading-relaxed text-gray-600">{mentor?.biography}</p>
+
+              {mentorData.logos.length > 0 && (
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Affiliated Institutions</h3>
+                  <div className="flex flex-wrap justify-center gap-3">
+                    {mentorData.logos.slice(0, 3).map((p, i) => (
+                      <div key={i} className="group h-12 w-12 bg-white p-2 rounded border border-gray-200 shadow-sm flex items-center justify-center relative hover:border-yellow-400 transition-all cursor-pointer" title={p.name}>
+                        <img
+                          src={getGoogleDriveImageUrl(p.url)}
+                          alt={p.name}
+                          className="h-full w-full object-contain"
+                          onError={(e) => { e.currentTarget.src = "https://placehold.co/40x40/e5e7eb/6b7280?text=Logo"; }}
+                        />
+                      </div>
+                    ))}
+                    {mentorData.logos.length > 3 && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="h-12 w-12 bg-gray-50 border border-gray-200 rounded flex items-center justify-center text-xs font-semibold text-gray-600 hover:bg-gray-100 cursor-help">+{mentorData.logos.length - 3}</div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="bg-white border-gray-200 shadow-xl p-3 rounded-lg">
+                            <p className="text-xs font-semibold text-gray-700 mb-2">Additional Institutions</p>
+                            <div className="grid grid-cols-2 gap-2 max-w-[240px]">
+                              {mentorData.logos.slice(3).map((p, i) => (
+                                <div key={i} className="flex items-center gap-2">
+                                  <div className="w-8 h-8 bg-white rounded border border-gray-200 p-1 flex items-center justify-center">
+                                    <img
+                                      src={getGoogleDriveImageUrl(p.url)}
+                                      alt={p.name}
+                                      className="max-w-full max-h-full object-contain"
+                                      onError={(e) => { e.currentTarget.src = "https://placehold.co/40x40/e5e7eb/6b7280?text=Logo"; }}
+                                    />
+                                  </div>
+                                  <p className="text-[11px] text-gray-600 break-words max-w-[78px]">{p.name}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {displayFields.length > 0 && (
+                <div className="mt-8 pt-8 border-t border-gray-200 space-y-6">
+                  {displayFields.map(([key, value]) => (
+                    <div key={key} className="text-left">
+                      <h3 className="text-sm font-semibold text-gray-900 mb-2">{formatLabel(key)}</h3>
+                      {Array.isArray(value) ? (
+                        <div className="flex flex-wrap gap-2">
+                          {value.map((item, i) => (
+                            <Badge key={i} className="bg-gray-100 text-gray-700 border border-gray-200 text-xs">{String(item)}</Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-600 leading-relaxed">{String(value)}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
         </Card>
 
         {/* Scheduler */}

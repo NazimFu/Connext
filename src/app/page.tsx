@@ -15,6 +15,25 @@ interface FeaturedMentor {
   institution_photo: { url: string; name: string }[];
 }
 
+const FAQ_ITEMS = [
+  {
+    q: "How do I find a mentor?",
+    a: "Browse mentor profiles, filter by expertise, and book sessions directly through the platform.",
+  },
+  {
+    q: "Are mentors verified?",
+    a: "Yes, all mentors go through a vetting process to ensure quality and credibility.",
+  },
+  {
+    q: "How much does a session cost?",
+    a: "Pricing varies by mentor. You can view rates on each mentor’s profile before booking.",
+  },
+  {
+    q: "Can I become a mentor?",
+    a: "Absolutely. Apply through our platform and we’ll review your profile.",
+  },
+];
+
 export default function Home() {
   const [featuredMentors, setFeaturedMentors] = useState<FeaturedMentor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,6 +42,7 @@ export default function Home() {
   const [mentorPage, setMentorPage] = useState(0);
   const [floatingNav, setFloatingNav] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   const heroRef = useRef<HTMLElement>(null);
   const mentorsPerPage = 4;
 
@@ -69,6 +89,45 @@ export default function Home() {
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const elements = Array.from(document.querySelectorAll<HTMLElement>('.scroll-reveal'));
+    if (elements.length === 0) return;
+
+    let lastScrollY = window.scrollY;
+    let isScrollingUp = false;
+
+    const handleDirection = () => {
+      const currentY = window.scrollY;
+      isScrollingUp = currentY < lastScrollY;
+      lastScrollY = currentY;
+    };
+
+    window.addEventListener('scroll', handleDirection, { passive: true });
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible');
+          } else if (isScrollingUp) {
+            entry.target.classList.remove('is-visible');
+          }
+        });
+      },
+      {
+        threshold: 0.18,
+        rootMargin: '0px 0px -8% 0px',
+      }
+    );
+
+    elements.forEach((element) => observer.observe(element));
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', handleDirection);
+    };
   }, []);
 
   const scrollToSection = (id: string) => {
@@ -124,6 +183,23 @@ export default function Home() {
           position: relative;
           padding: 100px 40px;
         }
+        .scroll-reveal {
+          opacity: 0;
+          transform: translateY(28px);
+          transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+          will-change: opacity, transform;
+        }
+
+        .scroll-reveal.is-visible {
+          opacity: 1;
+          transform: translateY(0);
+        }
+
+        .scroll-reveal[data-delay="1"] { transition-delay: 0.08s; }
+        .scroll-reveal[data-delay="2"] { transition-delay: 0.16s; }
+        .scroll-reveal[data-delay="3"] { transition-delay: 0.24s; }
+        .scroll-reveal[data-delay="4"] { transition-delay: 0.32s; }
+
         .soft-glow {
           position: absolute;
           width: 500px;
@@ -920,24 +996,75 @@ export default function Home() {
           border-radius: 10px;
           background: var(--white);
           border: 1px solid var(--border);
-          transition: border 0.2s;
+          cursor: pointer;
+          transition: border 0.2s, transform 0.2s, box-shadow 0.2s;
         }
 
         .faq-item:hover {
           border-color: rgba(245,197,24,0.3);
+          transform: translateY(-1px);
+          box-shadow: 0 10px 24px rgba(0, 0, 0, 0.04);
+        }
+
+        .faq-item.active {
+          border-color: rgba(245,197,24,0.5);
+          box-shadow: 0 14px 28px rgba(245, 197, 24, 0.08);
+        }
+
+        .faq-question-row {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          background: none;
+          border: none;
+          padding: 0;
+          text-align: left;
+          cursor: pointer;
         }
 
         .faq-question {
           font-size: 15px;
           font-weight: 500;
           color: var(--black);
-          margin-bottom: 6px;
+          margin-bottom: 0;
+        }
+
+        .faq-icon {
+          width: 28px;
+          height: 28px;
+          border-radius: 999px;
+          border: 1px solid rgba(0, 0, 0, 0.08);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          color: var(--mid);
+          transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+        }
+
+        .faq-item.active .faq-icon {
+          transform: rotate(45deg);
+          background: rgba(245, 197, 24, 0.12);
+          border-color: rgba(245, 197, 24, 0.3);
         }
 
         .faq-answer {
+          max-height: 0;
+          overflow: hidden;
+          opacity: 0;
+          margin-top: 0;
           font-size: 14px;
           color: var(--mid);
           line-height: 1.7;
+          transition: max-height 0.28s ease, opacity 0.24s ease, margin-top 0.24s ease;
+        }
+
+        .faq-item.active .faq-answer {
+          max-height: 180px;
+          opacity: 1;
+          margin-top: 10px;
         }
 
         /* ─── FOOTER ───────────────────────────────── */
@@ -1056,6 +1183,7 @@ export default function Home() {
           <li><button onClick={() => scrollToSection('home')}>Home</button></li>
           <li><button onClick={() => scrollToSection('mentors')}>Mentors</button></li>
           <li><button onClick={() => scrollToSection('about')}>About</button></li>
+          <li><button onClick={() => scrollToSection('faq')}>FAQ</button></li>
           <li><button onClick={() => scrollToSection('contact')}>Contact</button></li>
         </ul>
         <div className="floating-nav-actions">
@@ -1066,7 +1194,7 @@ export default function Home() {
 
       {/* ─── HERO SECTION ───────────────────────────── */}
       <div className="hero-mentors-bg">
-        <section className="hero-section" id="home" ref={heroRef}>
+        <section className="hero-section scroll-reveal is-visible" id="home" ref={heroRef}>
           <div className="soft-glow" style={{ top: '-100px', right: '-100px' }} />
           <div style={{ position: 'relative' }}>
             <nav className="hero-nav" aria-label="Primary navigation">
@@ -1079,6 +1207,7 @@ export default function Home() {
                 <li><button onClick={() => scrollToSection('home')}>Home</button></li>
                 <li><button onClick={() => scrollToSection('mentors')}>Mentors</button></li>
                 <li><button onClick={() => scrollToSection('about')}>About</button></li>
+                <li><button onClick={() => scrollToSection('faq')}>FAQ</button></li>
                 <li><button onClick={() => scrollToSection('contact')}>Contact</button></li>
               </ul>
               <div className="hero-nav-actions">
@@ -1101,6 +1230,7 @@ export default function Home() {
                 <button onClick={() => scrollToSection('home')}>Home</button>
                 <button onClick={() => scrollToSection('mentors')}>Mentors</button>
                 <button onClick={() => scrollToSection('about')}>About</button>
+                <button onClick={() => scrollToSection('faq')}>FAQ</button>
                 <button onClick={() => scrollToSection('contact')}>Contact</button>
                 <div className="mobile-nav-divider" />
                 <div className="mobile-nav-cta">
@@ -1141,24 +1271,18 @@ export default function Home() {
                 <div className="partners-grid">
                   {institutionPhotos.length > 0
                     ? institutionPhotos.slice(0, 10).map((photo, idx) => (
-                        <div key={idx} className="partner-cell">
+                        <div key={idx} className="partner-cell" title={photo.name}>
                           <img
                             src={getGoogleDriveImageUrl(photo.url)}
                             alt={photo.name}
+                            loading="lazy"
                             onError={(e) => {
-                              const p = e.currentTarget.parentElement;
-                              if (p) {
-                                e.currentTarget.style.display = 'none';
-                                const s = document.createElement('span');
-                                s.className = 'partner-cell-text';
-                                s.textContent = photo.name;
-                                p.appendChild(s);
-                              }
+                              e.currentTarget.src = 'https://placehold.co/120x60/e5e7eb/6b7280?text=Logo';
                             }}
                           />
                         </div>
                       ))
-                    : partnerFallbacks.map(name => (
+                    : partnerFallbacks.map((name) => (
                         <div key={name} className="partner-cell">
                           <span className="partner-cell-text">{name}</span>
                         </div>
@@ -1170,7 +1294,7 @@ export default function Home() {
         </section>
 
         {/* ─── MENTORS ────────────────────────────────── */}
-        <section className="mentors-section" id="mentors">
+        <section className="mentors-section scroll-reveal" id="mentors" data-delay="1">
         <div className="soft-glow" style={{ top: '-200px', left: '50%' }} />
           <div className="mentors-inner">
             <div className="mentors-header">
@@ -1230,7 +1354,7 @@ export default function Home() {
       </div>
 
       {/* ─── ABOUT ──────────────────────────────────── */}
-      <section className="about-section" id="about">
+      <section className="about-section scroll-reveal" id="about" data-delay="2">
         <div className="about-inner">
           <div className="about-eyebrow">About Connext</div>
           <div className="about-grid">
@@ -1255,7 +1379,7 @@ export default function Home() {
       </section>
 
       {/* ─── CTA ────────────────────────────────────── */}
-      <section className="cta-section">
+      <section className="cta-section scroll-reveal" data-delay="3">
         <div className="cta-glow" />
         <div className="cta-inner">
           <h2 className="cta-title">Ready to<br /><em>grow?</em></h2>
@@ -1268,36 +1392,33 @@ export default function Home() {
 
 
           {/* ─── FAQ ───────────────────────────────────── */}
-          <section className="faq-section">
+          <section className="faq-section scroll-reveal" id="faq" data-delay="4">
             <div className="faq-inner">
               <div className="faq-header">
                 <h2 className="faq-title">FAQ</h2>
               </div>
 
               <div className="faq-list">
-                {[
-                  {
-                    q: "How do I find a mentor?",
-                    a: "Browse mentor profiles, filter by expertise, and book sessions directly through the platform."
-                  },
-                  {
-                    q: "Are mentors verified?",
-                    a: "Yes, all mentors go through a vetting process to ensure quality and credibility."
-                  },
-                  {
-                    q: "How much does a session cost?",
-                    a: "Pricing varies by mentor. You can view rates on each mentor’s profile before booking."
-                  },
-                  {
-                    q: "Can I become a mentor?",
-                    a: "Absolutely. Apply through our platform and we’ll review your profile."
-                  }
-                ].map((item, i) => (
-                  <div key={i} className="faq-item">
-                    <div className="faq-question">{item.q}</div>
-                    <div className="faq-answer">{item.a}</div>
-                  </div>
-                ))}
+                {FAQ_ITEMS.map((item, i) => {
+                  const isOpen = openFaqIndex === i;
+                  return (
+                    <div key={i} className={`faq-item ${isOpen ? 'active' : ''}`}>
+                      <button
+                        type="button"
+                        className="faq-question-row"
+                        onClick={() => setOpenFaqIndex((current) => (current === i ? null : i))}
+                        aria-expanded={isOpen}
+                        aria-controls={`faq-answer-${i}`}
+                      >
+                        <div className="faq-question">{item.q}</div>
+                        <div className="faq-icon" aria-hidden="true">+</div>
+                      </button>
+                      <div id={`faq-answer-${i}`} className="faq-answer" aria-hidden={!isOpen}>
+                        {item.a}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </section>
