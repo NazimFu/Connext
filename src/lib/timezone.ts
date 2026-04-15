@@ -65,15 +65,66 @@ export const TIMEZONE_OPTIONS: TimezoneOption[] = [
  */
 export const MY_TZ = 'Asia/Kuala_Lumpur';
 
+// ---------------------------------------------------------------------------
+// CORE FIX: localDateTimeToUtcMs
+// ---------------------------------------------------------------------------
+// The original bug: `new Date("2025-06-03T08:00:00")` is parsed as the
+// **browser's local time**, not as Malaysia time. So `getUtcOffsetMinutes`
+// was computing the offset against the wrong UTC instant, producing a wildly
+// wrong UTC millisecond value — hence Korean mentees seeing 1:00 AM instead
+// of 10:00 AM.
+//
+// The correct approach: interpret the date+time string as UTC first (append
+// "Z"), then figure out how far Malaysia is offset from UTC at that moment,
+// and subtract to get the true UTC instant. One Newton-step is enough to
+// correct for DST edge cases.
+// ---------------------------------------------------------------------------
+
+/**
+ * Given a local wall-clock date+time string ("YYYY-MM-DDTHH:mm:ss") and an
+ * IANA timezone, return the corresponding UTC timestamp in milliseconds.
+ *
+ * Strategy
+ * --------
+ * 1. Treat the string naively as UTC (append "Z") → a first-guess Date.
+ * 2. Ask Intl what wall-clock time that UTC instant looks like in `tz`.
+ * 3. The difference between that wall-clock time and our target is the
+ *    residual error. Subtract it to get the true UTC instant.
+ *
+ * This is robust against DST transitions and does not rely on the browser's
+ * own timezone setting at all.
+ */
+function localDateTimeToUtcMs(localIso: string, tz: string): number {
+  // Step 1 – naive parse as UTC
+  const naiveUtcMs = new Date(localIso + 'Z').getTime();
+
+  // Step 2 – what does that UTC instant look like in the target timezone?
+  const naiveDate = new Date(naiveUtcMs);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  }).formatToParts(naiveDate);
+
+  const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value ?? '0', 10);
+  // en-CA gives YYYY-MM-DD dates, hour12:false gives 0-23 hours
+  let h = get('hour');
+  if (h === 24) h = 0; // midnight edge case in some engines
+  const tzWallMs = Date.UTC(get('year'), get('month') - 1, get('day'), h, get('minute'), get('second'));
+
+  // Step 3 – compute the offset error and correct
+  const offsetMs = naiveUtcMs - tzWallMs; // tz is ahead → offsetMs is positive
+  return naiveUtcMs + offsetMs;            // true UTC instant
+}
+
 /**
  * Convert a meeting date+time (stored in Malaysia TZ) to the user's display timezone.
- * Returns the converted Date object in local (JS) time, adjusted so when you
- * format it with toLocaleTimeString using the target TZ you get the right value.
  *
  * @param dateStr  "YYYY-MM-DD" (Malaysia date)
  * @param timeStr  "HH:mm" or "HH:mm AM/PM" (Malaysia time)
  * @param userTz   IANA timezone of the viewing user (e.g. "America/New_York")
- * @returns        { date: Date, displayTime: string, displayDate: string, tzLabel: string }
+ * @returns        { utcDate, displayTime, displayDate, displayDateFull, tzLabel }
  */
 export function convertMeetingTime(
   dateStr: string,
@@ -82,7 +133,7 @@ export function convertMeetingTime(
 ) {
   const targetTz = userTz || DEFAULT_TIMEZONE;
 
-  // Parse time into 24h hours + minutes (stored as Malaysia time)
+  // --- Parse timeStr into 24-h hours + minutes ---
   let hours = 0;
   let minutes = 0;
 
@@ -97,20 +148,15 @@ export function convertMeetingTime(
     minutes = m;
   }
 
-  // Build an ISO string representing Malaysia local time
-  const myLocalIso = `${dateStr}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+  // Build a wall-clock ISO string representing Malaysia local time (no suffix!)
+  const myLocalIso =
+    `${dateStr}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
 
-  // Compute the UTC instant from Malaysia time
-  // We use Intl.DateTimeFormat to find the UTC offset for MY_TZ at this moment
-  const myDate = new Date(myLocalIso);
-
-  // Compute Malaysia offset in minutes
-  const myOffsetMin = getUtcOffsetMinutes(myDate, MY_TZ);
-  // Create a Date representing the true UTC instant
-  const utcMs = myDate.getTime() - myOffsetMin * 60000;
+  // ✅ THE FIX: interpret that wall-clock string as Malaysia time → true UTC ms
+  const utcMs = localDateTimeToUtcMs(myLocalIso, MY_TZ);
   const utcDate = new Date(utcMs);
 
-  // Now format in the user's timezone
+  // Format in the user's target timezone
   const displayTime = utcDate.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
@@ -135,9 +181,84 @@ export function convertMeetingTime(
   });
 
   const tzOpt = TIMEZONE_OPTIONS.find(t => t.value === targetTz);
-  const tzLabel = tzOpt ? `${tzOpt.offset}` : targetTz;
+  const tzLabel = tzOpt ? tzOpt.offset : targetTz;
 
   return { utcDate, displayTime, displayDate, displayDateFull, tzLabel };
+}
+
+/**
+ * Convert a "HH:mm" time string from a user's local timezone into Malaysia time (MY_TZ).
+ * Used before storing availability slots in the database.
+ *
+ * @param timeStr  "HH:mm" in the user's timezone (e.g. "08:00")
+ * @param userTz   IANA timezone of the user (e.g. "America/New_York")
+ * @returns        "HH:mm" in Malaysia time (e.g. "21:00"), or null if invalid
+ */
+export function localTimeToMY(timeStr: string, userTz: string): string | null {
+  if (!timeStr || !userTz) return null;
+  try {
+    // Use a fixed reference date (Monday) to avoid DST edge cases
+    const referenceDate = '2000-01-03';
+    const localIso = `${referenceDate}T${timeStr}:00`;
+
+    // ✅ FIX: treat timeStr as a wall-clock time in userTz → get true UTC ms
+    const utcMs = localDateTimeToUtcMs(localIso, userTz);
+
+    // Now read that UTC instant as Malaysia wall-clock time
+    const utcDate = new Date(utcMs);
+    const myParts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: MY_TZ,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(utcDate);
+
+    const getP = (type: string) => myParts.find(p => p.type === type)?.value ?? '00';
+    let h = parseInt(getP('hour'), 10);
+    if (h === 24) h = 0;
+    const m = getP('minute');
+
+    return `${String(h).padStart(2, '0')}:${m}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Convert a "HH:mm" time string stored in Malaysia time (MY_TZ) into a user's local timezone.
+ * Used when loading availability slots from the database for display.
+ *
+ * @param timeStr  "HH:mm" in Malaysia time (e.g. "21:00")
+ * @param userTz   IANA timezone of the user (e.g. "America/New_York")
+ * @returns        "HH:mm" in the user's local time (e.g. "08:00"), or null if invalid
+ */
+export function myTimeToLocal(timeStr: string, userTz: string): string | null {
+  if (!timeStr || !userTz) return null;
+  try {
+    const referenceDate = '2000-01-03';
+    const myIso = `${referenceDate}T${timeStr}:00`;
+
+    // ✅ FIX: treat timeStr as Malaysia wall-clock → true UTC ms
+    const utcMs = localDateTimeToUtcMs(myIso, MY_TZ);
+
+    // Read that UTC instant as the user's local wall-clock time
+    const utcDate = new Date(utcMs);
+    const localParts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: userTz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(utcDate);
+
+    const getP = (type: string) => localParts.find(p => p.type === type)?.value ?? '00';
+    let h = parseInt(getP('hour'), 10);
+    if (h === 24) h = 0;
+    const m = getP('minute');
+
+    return `${String(h).padStart(2, '0')}:${m}`;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -158,21 +279,8 @@ export function formatMeetingDateTime(
 }
 
 /**
- * Get the UTC offset in minutes for an IANA timezone at a given Date.
- * Positive = east of UTC (e.g. Malaysia = +480).
- */
-function getUtcOffsetMinutes(date: Date, tz: string): number {
-  // Format as UTC and in target TZ, then diff
-  const utcStr = date.toLocaleString('en-US', { timeZone: 'UTC' });
-  const tzStr  = date.toLocaleString('en-US', { timeZone: tz });
-  const utcMs  = new Date(utcStr).getTime();
-  const tzMs   = new Date(tzStr).getTime();
-  return (tzMs - utcMs) / 60000;
-}
-
-/**
  * Parse a stored meeting datetime (Malaysia TZ) into a real UTC Date.
- * Useful for "is this meeting in the past?" checks accounting for the user's TZ.
+ * Useful for "is this meeting in the past?" checks.
  */
 export function parseMeetingUtcDate(dateStr: string, timeStr: string): Date {
   const { utcDate } = convertMeetingTime(dateStr, timeStr, MY_TZ);

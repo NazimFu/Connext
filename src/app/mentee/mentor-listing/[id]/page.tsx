@@ -43,16 +43,6 @@ const formatLabel = (() => {
   };
 })();
 
-// Fast timezone detection
-const getUserTimezone = (() => {
-  let userTz: string | null = null;
-  return (): string => {
-    if (userTz) return userTz;
-    userTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return userTz;
-  };
-})();
-
 export default function MentorDetailPage() {
   const params = useParams();
   const { toast } = useToast();
@@ -122,33 +112,42 @@ export default function MentorDetailPage() {
    * We keep myTime as the submission value and displayTime for rendering.
    */
   const availableTimesForDay = useMemo(() => {
-    if (!mentor || !date) return [];
-    const weekday = WEEKDAYS[getDay(date)];
-    const slot = mentor.available_slots?.find((s: any) => s?.day?.toLowerCase() === weekday.toLowerCase());
-    if (!slot?.time || !Array.isArray(slot.time)) return [];
+  if (!mentor || !date) return [];
 
-    const seen = new Set<string>();
-    const result: { myTime: string; displayTime: string; booked: boolean }[] = [];
-    const dateStr = format(date, "yyyy-MM-dd");
+  const weekday = WEEKDAYS[getDay(date)];
+  const slot = mentor.available_slots?.find(
+    (s: any) => s?.day?.toLowerCase() === weekday.toLowerCase()
+  );
+  if (!slot?.time || !Array.isArray(slot.time)) return [];
 
-    for (const myTime of slot.time) {
-      if (!myTime?.trim()) continue;
+  const seen = new Set<string>();
+  const result: Array<{ myTime: string; displayTime: string; booked: boolean }> = [];
+  const dateStr = format(date, "yyyy-MM-dd");
 
-      // Convert from MY_TZ → user's TZ
-      const converted = convertMeetingTime(dateStr, myTime, userTz);
-      const displayTime = converted.displayTime; // e.g. "09:00 AM"
+  for (const myTime of slot.time) {
+    if (!myTime?.trim()) continue;
 
-      // Only show if the date is still the same in the user's TZ (cross-midnight slots are hidden)
-      const userDateStr = format(converted.utcDate, "yyyy-MM-dd");
-      if (userDateStr !== dateStr && isNonDefaultTz) continue;
+    const converted = convertMeetingTime(dateStr, myTime, userTz);
 
-      const key = `${myTime}-${displayTime}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      result.push({ myTime, displayTime, booked: bookedSlots.includes(myTime) });
-    }
-    return result.filter(s => !s.booked).sort((a, b) => a.myTime.localeCompare(b.myTime));
-  }, [mentor, date, userTz, bookedSlots, isNonDefaultTz]);
+    // Hide slots that shift to a different calendar day in the user's timezone
+    const userDateStr = format(converted.utcDate, "yyyy-MM-dd");  // ← use utcDate, not dateShifted
+    if (userDateStr !== dateStr && isNonDefaultTz) continue;
+
+    const key = `${myTime}-${converted.displayTime}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    result.push({
+      myTime,                          // Malaysia time — sent to backend
+      displayTime: converted.displayTime, // User's local time — shown in UI
+      booked: bookedSlots.includes(myTime),
+    });
+  }
+
+  return result
+    .filter((s) => !s.booked)
+    .sort((a, b) => a.myTime.localeCompare(b.myTime));
+}, [mentor, date, userTz, bookedSlots, isNonDefaultTz]);
 
   const calendarModifiers = useMemo(() => {
     const today = new Date();

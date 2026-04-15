@@ -139,44 +139,43 @@ export default function MentorDetailPage() {
     }
   }, [mentor?.id]);
 
-  // Corrected available times with proper conversion
   const availableTimesForDay = useMemo(() => {
-    if (!mentor || !date) return [];
+  if (!mentor || !date) return [];
 
-    const weekday = WEEKDAYS[getDay(date)];
-    const slot = mentor.available_slots?.find(
-      (s: any) => s?.day?.toLowerCase() === weekday.toLowerCase()
-    );
+  const weekday = WEEKDAYS[getDay(date)];
+  const slot = mentor.available_slots?.find(
+    (s: any) => s?.day?.toLowerCase() === weekday.toLowerCase()
+  );
+  if (!slot?.time || !Array.isArray(slot.time)) return [];
 
-    if (!slot?.time || !Array.isArray(slot.time)) return [];
+  const seen = new Set<string>();
+  const result: Array<{ myTime: string; displayTime: string; booked: boolean }> = [];
+  const dateStr = format(date, "yyyy-MM-dd");
 
-    const seen = new Set<string>();
-    const result: Array<{ myTime: string; displayTime: string; booked: boolean }> = [];
-    const dateStr = format(date, "yyyy-MM-dd");
+  for (const myTime of slot.time) {
+    if (!myTime?.trim()) continue;
 
-    for (const myTime of slot.time) {
-      if (!myTime?.trim()) continue;
+    const converted = convertMeetingTime(dateStr, myTime, userTz);
 
-      const converted = convertMeetingTime(dateStr, myTime, userTz);
+    // Hide slots that shift to a different calendar day in the user's timezone
+    const userDateStr = format(converted.utcDate, "yyyy-MM-dd");  // ← use utcDate, not dateShifted
+    if (userDateStr !== dateStr && isNonDefaultTz) continue;
 
-      // Hide slots that shift to another day in user's timezone
-      if (converted.dateShifted && isNonDefaultTz) continue;   // Note: your current convertMeetingTime doesn't return dateShifted!
+    const key = `${myTime}-${converted.displayTime}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
 
-      const key = `${myTime}-${converted.displayTime}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+    result.push({
+      myTime,                          // Malaysia time — sent to backend
+      displayTime: converted.displayTime, // User's local time — shown in UI
+      booked: bookedSlots.includes(myTime),
+    });
+  }
 
-      result.push({
-        myTime,
-        displayTime: converted.displayTime,
-        booked: bookedSlots.includes(myTime),
-      });
-    }
-
-    return result
-      .filter((s) => !s.booked)
-      .sort((a, b) => a.myTime.localeCompare(b.myTime));
-  }, [mentor, date, userTz, bookedSlots, isNonDefaultTz]);
+  return result
+    .filter((s) => !s.booked)
+    .sort((a, b) => a.myTime.localeCompare(b.myTime));
+}, [mentor, date, userTz, bookedSlots, isNonDefaultTz]);
 
   const calendarModifiers = useMemo(() => {
     const today = new Date();
