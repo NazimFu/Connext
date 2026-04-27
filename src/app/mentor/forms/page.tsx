@@ -7,6 +7,22 @@ import { useRouter } from 'next/navigation';
 import { auth } from "../../../lib/firebase";
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ImageCropper } from '@/components/ui/image-cropper';
+import { Checkbox } from '@/components/ui/checkbox';
+import { getGoogleDriveImageUrl } from '@/lib/utils';
+import { GripVertical, Building2, X } from 'lucide-react';
+
+type InstitutionPhoto = {
+  url: string;
+  name: string;
+};
+
+const MAX_CV_SIZE_BYTES = 2 * 1024 * 1024;
+const ALLOWED_CV_MIME_TYPES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
+const ALLOWED_CV_EXTENSIONS = ['.pdf', '.docx'];
 
 // Tag Input Component - allows adding items by pressing Enter or comma
 interface TagInputProps {
@@ -118,7 +134,10 @@ export default function MentorFormPage() {
     phone_number: '',
     current_institution: '',
     institution_website: '',
-    institution_photos: [] as string[],
+    mentor_photo: '',
+    institution_photo: [] as InstitutionPhoto[],
+    cv_link: '',
+    allowCVShare: false,
     biography: '',
     specializations: [] as string[],
     consultation_fields: [] as string[],
@@ -131,6 +150,15 @@ export default function MentorFormPage() {
 
   // Photo URL input state
   const [photoUrlInput, setPhotoUrlInput] = useState('');
+  const [newInstitutionName, setNewInstitutionName] = useState('');
+  const [institutionSuggestions, setInstitutionSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [profileCropperOpen, setProfileCropperOpen] = useState(false);
+  const [institutionCropperOpen, setInstitutionCropperOpen] = useState(false);
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [isUploadingCV, setIsUploadingCV] = useState(false);
+  const [cvError, setCvError] = useState('');
+  const [draggedInstitutionIndex, setDraggedInstitutionIndex] = useState<number | null>(null);
   
   // Load credentials from sessionStorage
   useEffect(() => {
@@ -145,6 +173,35 @@ export default function MentorFormPage() {
     setEmail(storedEmail);
     setPassword(storedPassword);
   }, [router]);
+
+  useEffect(() => {
+    const fetchInstitutionSuggestions = async () => {
+      try {
+        const res = await fetch('/api/mentors');
+        if (!res.ok) return;
+
+        const mentors = await res.json();
+        const suggestions = new Set<string>();
+
+        mentors.forEach((mentor: any) => {
+          if (Array.isArray(mentor.institution_photo)) {
+            mentor.institution_photo.forEach((photo: any) => {
+              const institutionName = typeof photo === 'string' ? null : photo.name;
+              if (institutionName && institutionName !== 'Institution') {
+                suggestions.add(institutionName);
+              }
+            });
+          }
+        });
+
+        setInstitutionSuggestions(Array.from(suggestions).sort());
+      } catch (error) {
+        console.warn('Failed to load institution suggestions:', error);
+      }
+    };
+
+    fetchInstitutionSuggestions();
+  }, []);
   
   // Countdown timer
   useEffect(() => {
@@ -163,21 +220,121 @@ export default function MentorFormPage() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const addPhoto = () => {
-    if (photoUrlInput.trim() && !formData.institution_photos.includes(photoUrlInput.trim())) {
-      setFormData(prev => ({
-        ...prev,
-        institution_photos: [...prev.institution_photos, photoUrlInput.trim()]
-      }));
-      setPhotoUrlInput('');
+  const addInstitutionPhoto = (photo: InstitutionPhoto) => {
+    if (!photo.url.trim() || !photo.name.trim()) {
+      return;
     }
+
+    setFormData(prev => ({
+      ...prev,
+      institution_photo: [...prev.institution_photo, photo],
+    }));
+  };
+
+  const addPhoto = () => {
+    const name = newInstitutionName.trim();
+    const url = photoUrlInput.trim();
+
+    if (!name || !url) {
+      setError('Please provide both institution name and image URL.');
+      return;
+    }
+
+    addInstitutionPhoto({ url, name });
+    setPhotoUrlInput('');
+    setNewInstitutionName('');
+    setShowSuggestions(false);
+    setError('');
   };
 
   const removePhoto = (index: number) => {
     setFormData(prev => ({
       ...prev,
-      institution_photos: prev.institution_photos.filter((_, i) => i !== index)
+      institution_photo: prev.institution_photo.filter((_, i) => i !== index)
     }));
+  };
+
+  const handleProfileImageCropped = (url: string) => {
+    setFormData(prev => ({ ...prev, mentor_photo: url }));
+  };
+
+  const handleInstitutionImageCropped = (url: string) => {
+    const name = newInstitutionName.trim() || 'Institution';
+    addInstitutionPhoto({ url, name });
+    setNewInstitutionName('');
+    setShowSuggestions(false);
+  };
+
+  const handleDragStart = (index: number) => setDraggedInstitutionIndex(index);
+  const handleDragEnd = () => setDraggedInstitutionIndex(null);
+  const handleDrop = (index: number) => {
+    if (draggedInstitutionIndex === null || draggedInstitutionIndex === index) {
+      return;
+    }
+
+    setFormData(prev => {
+      const photos = [...prev.institution_photo];
+      const [item] = photos.splice(draggedInstitutionIndex, 1);
+      photos.splice(index, 0, item);
+      return { ...prev, institution_photo: photos };
+    });
+
+    setDraggedInstitutionIndex(null);
+  };
+
+  const validateCvFile = (file: File) => {
+    const lowerName = file.name.toLowerCase();
+    const hasAllowedExtension = ALLOWED_CV_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+    const hasAllowedMimeType = ALLOWED_CV_MIME_TYPES.includes(file.type);
+
+    if (!hasAllowedExtension && !hasAllowedMimeType) {
+      return 'Only PDF or DOCX files are allowed.';
+    }
+
+    if (file.size > MAX_CV_SIZE_BYTES) {
+      return 'CV file must be 2MB or smaller.';
+    }
+
+    return null;
+  };
+
+  const handleCVUpload = async () => {
+    setCvError('');
+
+    if (!cvFile) {
+      setCvError('Please select a CV file to upload.');
+      return;
+    }
+
+    const cvValidationError = validateCvFile(cvFile);
+    if (cvValidationError) {
+      setCvError(cvValidationError);
+      return;
+    }
+
+    setIsUploadingCV(true);
+    setError('');
+
+    try {
+      const fd = new FormData();
+      fd.append('file', cvFile);
+      fd.append('folder', 'mentor');
+
+      const uploadRes = await fetch('/api/uploadFirebase', { method: 'POST', body: fd });
+      const uploadData = await uploadRes.json();
+
+      if (!uploadRes.ok) {
+        throw new Error(uploadData.error || 'Failed to upload CV');
+      }
+
+      setFormData(prev => ({ ...prev, cv_link: uploadData.path }));
+      setCvFile(null);
+      setCvError('');
+    } catch (uploadError) {
+      setCvError(uploadError instanceof Error ? uploadError.message : 'Failed to upload CV');
+    } finally {
+      setIsUploadingCV(false);
+    }
   };
 
   // Schedule functions
@@ -257,7 +414,10 @@ export default function MentorFormPage() {
           phone_number: formData.phone_number,
           current_institution: formData.current_institution,
           institution_website: formData.institution_website,
-          institution_photos: formData.institution_photos,
+          mentor_photo: formData.mentor_photo,
+          institution_photo: formData.institution_photo,
+          cv_link: formData.cv_link,
+          allowCVShare: formData.allowCVShare,
           biography: formData.biography,
           specializations: formData.specializations,
           consultation_fields: formData.consultation_fields,
@@ -346,8 +506,10 @@ export default function MentorFormPage() {
           role: 'mentor',
           mentor_name: formData.mentor_name,
           phone_number: formData.phone_number,
-          mentor_photo: '',
-          institution_photo: formData.institution_photos,
+          current_institution: formData.current_institution,
+          institution_website: formData.institution_website,
+          mentor_photo: formData.mentor_photo,
+          institution_photo: formData.institution_photo,
           specialization: formData.specializations,
           field_of_consultation: formData.consultation_fields,
           biography: formData.biography,
@@ -357,6 +519,8 @@ export default function MentorFormPage() {
           available_slots: getAvailableSlotsForAPI(),
           linkedin: formData.linkedin,
           github: formData.github,
+          cv_link: formData.cv_link,
+          allowCVShare: formData.allowCVShare,
         }),
       });
 
@@ -404,7 +568,10 @@ export default function MentorFormPage() {
           phone_number: formData.phone_number,
           current_institution: formData.current_institution,
           institution_website: formData.institution_website,
-          institution_photos: formData.institution_photos,
+          mentor_photo: formData.mentor_photo,
+          institution_photo: formData.institution_photo,
+          cv_link: formData.cv_link,
+          allowCVShare: formData.allowCVShare,
           biography: formData.biography,
           specializations: formData.specializations,
           consultation_fields: formData.consultation_fields,
@@ -785,16 +952,88 @@ export default function MentorFormPage() {
                         📸
                       </div>
                       <div>
-                        <h2 className="text-xl font-bold text-black">Institution Photos</h2>
-                        <p className="text-gray-600 text-sm">Showcase your workplace</p>
+                        <h2 className="text-xl font-bold text-black">Profile & Documents</h2>
+                        <p className="text-gray-600 text-sm">Add your profile picture, institution photos, and CV</p>
+                      </div>
+                    </div>
+
+                    <div className="mb-8">
+                      <h3 className="text-base font-semibold text-black mb-4">Profile Picture</h3>
+                      <div className="flex items-center gap-4">
+                        <div className="w-24 h-24 rounded-full border border-gray-300 overflow-hidden bg-gray-50 flex items-center justify-center">
+                          {formData.mentor_photo ? (
+                            <img src={formData.mentor_photo} alt="Profile" className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-gray-400 text-xs text-center px-2">No photo</span>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setProfileCropperOpen(true)}
+                            className="px-4 py-2 bg-yellow-400 text-black font-semibold rounded-lg hover:bg-yellow-500 transition-colors"
+                          >
+                            Upload / Crop Profile Photo
+                          </button>
+                          {formData.mentor_photo && (
+                            <button
+                              type="button"
+                              onClick={() => setFormData(prev => ({ ...prev, mentor_photo: '' }))}
+                              className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                              Remove Photo
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                     
-                    {/* Add photo URL input */}
-                    <div className="mb-6">
-                      <div className="flex gap-3">
-                        <div className="flex-1 relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">🔗</span>
+                    {/* Institution photos */}
+                    <div className="mb-6 space-y-4">
+                      <h3 className="text-base font-semibold text-black">Institution Photos</h3>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-black">Institution name</label>
+                          <div className="relative">
+                            <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                            <input
+                              type="text"
+                              value={newInstitutionName}
+                              onChange={(e) => {
+                                setNewInstitutionName(e.target.value);
+                                setShowSuggestions(e.target.value.length > 0);
+                              }}
+                              onFocus={() => setShowSuggestions(newInstitutionName.length > 0)}
+                              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                              placeholder="MIT, Stanford, Google..."
+                              className="form-input w-full pl-11 pr-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-black"
+                            />
+                            {showSuggestions && institutionSuggestions.length > 0 && (
+                              <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                {institutionSuggestions
+                                  .filter(suggestion => suggestion.toLowerCase().includes(newInstitutionName.toLowerCase()))
+                                  .slice(0, 10)
+                                  .map((suggestion) => (
+                                    <button
+                                      key={suggestion}
+                                      type="button"
+                                      onClick={() => {
+                                        setNewInstitutionName(suggestion);
+                                        setShowSuggestions(false);
+                                      }}
+                                      className="w-full text-left px-3 py-2 hover:bg-yellow-50 text-sm border-b border-gray-100 last:border-0"
+                                    >
+                                      {suggestion}
+                                    </button>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-black">Institution image URL</label>
                           <input
                             type="url"
                             value={photoUrlInput}
@@ -806,45 +1045,68 @@ export default function MentorFormPage() {
                               }
                             }}
                             placeholder="Paste image URL and press Enter..."
-                            className="form-input w-full pl-12 pr-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-black"
+                            className="form-input w-full px-4 py-3 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-black"
                           />
                         </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-3">
                         <button
                           type="button"
                           onClick={addPhoto}
                           className="px-6 py-3 bg-yellow-400 text-black font-semibold rounded-lg hover:bg-yellow-500 transition-colors"
                         >
-                          Add
+                          Add Institution
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInstitutionCropperOpen(true)}
+                          className="px-6 py-3 bg-white border border-gray-300 text-black font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          Crop & Add
                         </button>
                       </div>
-                      <p className="mt-2 text-xs text-gray-600 flex items-center gap-1">
-                        <kbd className="px-1.5 py-0.5 bg-gray-200 border border-gray-300 rounded text-[10px] font-mono">Enter</kbd>
-                        <span>to add photo URL</span>
+                      <p className="text-xs text-gray-600">
+                        Choose an institution name from suggestions, add an image URL, or crop and add an image. Reorder the list to control which five appear on the profile.
                       </p>
                     </div>
 
                     {/* Photo grid */}
-                    {formData.institution_photos.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {formData.institution_photos.map((photo, index) => (
-                          <div key={index} className="photo-card group relative bg-gray-100 border border-gray-200 rounded-lg overflow-hidden aspect-video">
-                            <img 
-                              src={photo} 
-                              alt={`Institution photo ${index + 1}`}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect fill="%23f1f5f9" width="100" height="100"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%2394a3b8" font-size="12">Invalid URL</text></svg>';
-                              }}
-                            />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {formData.institution_photo.length > 0 ? (
+                      <div className="space-y-3">
+                        {formData.institution_photo.map((photo, index) => (
+                          <div
+                            key={`${photo.name}-${index}`}
+                            draggable
+                            onDragStart={() => handleDragStart(index)}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={() => handleDrop(index)}
+                            onDragEnd={handleDragEnd}
+                            className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-move ${draggedInstitutionIndex === index ? 'opacity-50 border-yellow-400' : 'border-gray-300 hover:border-yellow-400'} ${index < 5 ? 'bg-gradient-to-r from-green-50 to-emerald-50' : 'bg-gray-50'}`}
+                          >
+                            <GripVertical className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                            <div className="w-16 h-16 rounded-lg border border-gray-200 bg-white flex items-center justify-center p-2 flex-shrink-0 overflow-hidden">
+                              <img
+                                src={photo.url.startsWith('data:') ? photo.url : getGoogleDriveImageUrl(photo.url)}
+                                alt={photo.name}
+                                className="max-h-full max-w-full object-contain"
+                                onError={(e) => {
+                                  e.currentTarget.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect fill="%23f1f5f9" width="64" height="64"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%2394a3b8" font-size="10">Image</text></svg>';
+                                }}
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-sm text-gray-900 truncate">{photo.name}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {index < 5 ? <span className="text-green-600 font-medium">✓ Shown on profile (Position {index + 1})</span> : <span>Hidden (Position {index + 1})</span>}
+                              </p>
+                            </div>
                             <button
                               type="button"
                               onClick={() => removePhoto(index)}
-                              className="absolute top-2 right-2 w-8 h-8 bg-black text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-gray-800"
+                              className="flex-shrink-0 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg p-2"
                             >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
+                              <X className="h-4 w-4" />
                             </button>
                           </div>
                         ))}
@@ -853,9 +1115,93 @@ export default function MentorFormPage() {
                       <div className="text-center py-12 border border-gray-300 rounded-lg bg-gray-50">
                         <div className="text-4xl mb-3">🖼️</div>
                         <p className="text-gray-900 font-medium">No photos added yet</p>
-                        <p className="text-gray-600 text-sm">Add URLs to showcase your institution</p>
+                        <p className="text-gray-600 text-sm">Add institution images to showcase your workplace</p>
                       </div>
                     )}
+
+                    <div className="mt-8 border-t border-gray-200 pt-8">
+                      <h3 className="text-base font-semibold text-black mb-4">CV / Resume</h3>
+
+                      {formData.cv_link && (
+                        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-green-900">CV uploaded successfully</p>
+                            <p className="text-xs text-green-700">You can continue or replace this file.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cvUrl = formData.cv_link.startsWith('http')
+                                ? formData.cv_link
+                                : `/api/attachment-proxy?url=${encodeURIComponent(formData.cv_link)}`;
+                              window.open(cvUrl, '_blank');
+                            }}
+                            className="px-3 py-2 bg-white border border-green-300 text-green-800 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium"
+                          >
+                            View CV
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="flex gap-3 items-center">
+                        <input
+                          type="file"
+                          accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                          onChange={(e) => {
+                            const selectedFile = e.target.files?.[0] || null;
+
+                            if (!selectedFile) {
+                              setCvFile(null);
+                              return;
+                            }
+
+                            const cvValidationError = validateCvFile(selectedFile);
+                            if (cvValidationError) {
+                              setCvError(cvValidationError);
+                              setCvFile(null);
+                              e.target.value = '';
+                              return;
+                            }
+
+                            setCvError('');
+                            setCvFile(selectedFile);
+                          }}
+                          className="flex-1 px-4 py-2.5 bg-white border border-gray-300 rounded-lg"
+                          disabled={isUploadingCV}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleCVUpload}
+                          disabled={!cvFile || isUploadingCV}
+                          className="px-5 py-2.5 bg-black text-white font-semibold rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {isUploadingCV ? 'Uploading...' : 'Upload CV'}
+                        </button>
+                      </div>
+                      <p className="mt-2 text-xs text-gray-600">Accepted: PDF or DOCX. Maximum size: 2MB.</p>
+                      {cvError && (
+                        <p className="mt-2 text-sm text-red-600 font-medium">{cvError}</p>
+                      )}
+
+                      <div className="mt-4 p-3 border border-amber-200 bg-amber-50 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <Checkbox
+                            id="allow-cv-share-signup"
+                            checked={formData.allowCVShare}
+                            onCheckedChange={(checked) => setFormData(prev => ({ ...prev, allowCVShare: checked as boolean }))}
+                            className="mt-0.5"
+                          />
+                          <div>
+                            <label htmlFor="allow-cv-share-signup" className="text-sm font-medium text-amber-900 cursor-pointer">
+                              Allow others to view my CV for requests
+                            </label>
+                            <p className="text-xs text-amber-700 mt-1">
+                              Turning this on makes your CV visible in request contexts where CV sharing is needed.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -1203,6 +1549,26 @@ export default function MentorFormPage() {
           )}
         </div>
       </div>
+
+      <ImageCropper
+        open={profileCropperOpen}
+        onOpenChange={setProfileCropperOpen}
+        onCropComplete={handleProfileImageCropped}
+        aspectRatio={1}
+        circularCrop={true}
+        title="Crop Profile Photo"
+        description="Adjust and crop your profile picture"
+      />
+
+      <ImageCropper
+        open={institutionCropperOpen}
+        onOpenChange={setInstitutionCropperOpen}
+        onCropComplete={handleInstitutionImageCropped}
+        aspectRatio={16 / 9}
+        circularCrop={false}
+        title="Crop Institution Image"
+        description="Add an institution image to your profile"
+      />
     </>
   );
 }

@@ -15,6 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { TimezoneSelector } from "@/components/ui/timezone-selector"
 import { DEFAULT_TIMEZONE } from "@/lib/timezone"
 
+const MAX_CV_SIZE_BYTES = 2 * 1024 * 1024;
 const ALLOWED_CV_MIME_TYPES = [
     'application/pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -66,6 +67,10 @@ export default function EditProfilePage() {
             return 'Only PDF or DOCX files are allowed.';
         }
 
+        if (file.size > MAX_CV_SIZE_BYTES) {
+            return 'CV file must be 2MB or smaller.';
+        }
+
         return null;
     };
 
@@ -115,9 +120,8 @@ export default function EditProfilePage() {
             formDataObj.append('file', cvFile);
 
             const uploadRes = await fetch('/api/uploadFirebase', { method: 'POST', body: formDataObj });
-            if (!uploadRes.ok) throw new Error('Failed to upload CV file');
-
             const uploadData = await uploadRes.json();
+            if (!uploadRes.ok) throw new Error(uploadData.error || 'Failed to upload CV file');
             const cvPath = uploadData.path;
 
             setFormData(prev => ({ ...prev, cv_link: cvPath }));

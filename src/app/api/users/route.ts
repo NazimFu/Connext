@@ -15,6 +15,9 @@ export async function POST(request: Request) {
     if (role === 'mentor') {
       const {
         mentor_name,
+        phone_number,
+        current_institution,
+        institution_website,
         mentor_photo,
         institution_photo,
         specialization,
@@ -25,7 +28,9 @@ export async function POST(request: Request) {
         achievement,
         available_slots,
         linkedin,
-        github
+        github,
+        cv_link,
+        allowCVShare,
       } = body;
 
       const menteeId = `mentee_${uid}`;
@@ -36,8 +41,13 @@ export async function POST(request: Request) {
         mentorUID: uid,
         mentor_name: mentor_name || '',
         mentor_email: email,
+        phone_number: phone_number || '',
+        current_institution: current_institution || '',
+        institution_website: institution_website || '',
         mentor_photo: mentor_photo || '',
         institution_photo: institution_photo || [],
+        cv_link: cv_link || '',
+        allowCVShare: allowCVShare || false,
         role: 'mentor',
         specialization: specialization || [],
         field_of_consultation: field_of_consultation || [],
@@ -136,9 +146,9 @@ export async function POST(request: Request) {
         id: createdMentee.id,
         name: createdMentee.name,
         email: createdMentee.email,
-        role: createdMentee.role,
+        role: 'mentee',
         verified: createdMentee.verified,
-        verificationStatus: createdMentee.verificationStatus,
+        verificationStatus: 'not-submitted',
         tokens: createdMentee.tokens,
       };
 

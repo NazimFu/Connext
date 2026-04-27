@@ -44,6 +44,7 @@ const ALLOWED_CV_MIME_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
 const ALLOWED_CV_EXTENSIONS = ['.pdf', '.docx'];
+const MAX_CV_SIZE_BYTES = 2 * 1024 * 1024;
 
 // ============================================
 // TAG INPUT COMPONENT
@@ -651,6 +652,10 @@ function MentorProfileEdit() {
       return 'Only PDF or DOCX files are allowed.';
     }
 
+    if (file.size > MAX_CV_SIZE_BYTES) {
+      return 'CV file must be 2MB or smaller.';
+    }
+
     return null;
   };
 
@@ -669,8 +674,9 @@ function MentorProfileEdit() {
       fd.append('file', cvFile);
       fd.append('folder', 'mentor');
       const upRes = await fetch('/api/uploadFirebase', { method: 'POST', body: fd });
-      if (!upRes.ok) throw new Error('Failed to upload CV');
-      const { path: cvPath } = await upRes.json();
+      const uploadData = await upRes.json();
+      if (!upRes.ok) throw new Error(uploadData.error || 'Failed to upload CV');
+      const { path: cvPath } = uploadData;
       setFormData(prev => ({ ...prev, cv_link: cvPath }));
       const saveRes = await fetch('/api/mentor/profile', {
         method: 'PATCH',
