@@ -39,6 +39,12 @@ import {
   type TimezoneOption,
 } from '@/lib/timezone';
 
+const ALLOWED_CV_MIME_TYPES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
+const ALLOWED_CV_EXTENSIONS = ['.pdf', '.docx'];
+
 // ============================================
 // TAG INPUT COMPONENT
 // ============================================
@@ -636,8 +642,27 @@ function MentorProfileEdit() {
     setNewInstitutionName('');
   };
 
+  const validateCvFile = (file: File) => {
+    const lowerName = file.name.toLowerCase();
+    const hasAllowedExtension = ALLOWED_CV_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+    const hasAllowedMimeType = ALLOWED_CV_MIME_TYPES.includes(file.type);
+
+    if (!hasAllowedExtension && !hasAllowedMimeType) {
+      return 'Only PDF or DOCX files are allowed.';
+    }
+
+    return null;
+  };
+
   const handleCVUpload = async () => {
     if (!cvFile) { toast({ title: 'Error', description: 'Please select a file.', variant: 'destructive' }); return; }
+
+    const cvValidationError = validateCvFile(cvFile);
+    if (cvValidationError) {
+      toast({ title: 'Error', description: cvValidationError, variant: 'destructive' });
+      return;
+    }
+
     setIsUploadingCV(true);
     try {
       const fd = new FormData();
@@ -819,11 +844,35 @@ function MentorProfileEdit() {
                   <div className="space-y-3">
                     <Label className="text-sm font-semibold text-gray-700">Update CV/Resume</Label>
                     <div className="flex gap-2">
-                      <Input type="file" accept=".pdf" onChange={(e) => setCvFile(e.target.files?.[0] || null)} className="border-neutral-200" disabled={isUploadingCV} />
+                      <Input
+                        type="file"
+                        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={(e) => {
+                          const selectedFile = e.target.files?.[0] || null;
+
+                          if (!selectedFile) {
+                            setCvFile(null);
+                            return;
+                          }
+
+                          const cvValidationError = validateCvFile(selectedFile);
+                          if (cvValidationError) {
+                            toast({ title: 'Error', description: cvValidationError, variant: 'destructive' });
+                            setCvFile(null);
+                            e.target.value = '';
+                            return;
+                          }
+
+                          setCvFile(selectedFile);
+                        }}
+                        className="border-neutral-200"
+                        disabled={isUploadingCV}
+                      />
                       <Button type="button" onClick={handleCVUpload} disabled={!cvFile || isUploadingCV} className="bg-neutral-900 hover:bg-neutral-800 text-white whitespace-nowrap">
                         {isUploadingCV ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Uploading...</> : <><Upload className="h-4 w-4 mr-1" />Upload</>}
                       </Button>
                     </div>
+                    <p className="text-xs text-gray-500">Accepted: PDF, DOCX.</p>
                   </div>
 
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">

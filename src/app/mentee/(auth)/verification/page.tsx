@@ -15,6 +15,13 @@ import { useEffect } from 'react';
 import { auth } from '../../../../lib/firebase';
 import { Checkbox } from '@/components/ui/checkbox';
 
+const MAX_CV_SIZE_BYTES = 2 * 1024 * 1024;
+const ALLOWED_CV_MIME_TYPES = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
+const ALLOWED_CV_EXTENSIONS = ['.pdf', '.docx'];
+
 export default function VerificationPage() {
     const { user, isAuthLoading, refreshUser } = useAuth();
     const router = useRouter();
@@ -84,6 +91,21 @@ export default function VerificationPage() {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
+    const validateCvFile = (file: File) => {
+        const lowerName = file.name.toLowerCase();
+        const hasAllowedExtension = ALLOWED_CV_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+        const hasAllowedMimeType = ALLOWED_CV_MIME_TYPES.includes(file.type);
+
+        if (!hasAllowedExtension && !hasAllowedMimeType) {
+            return 'Only PDF or DOCX files are allowed.';
+        }
+
+        if (file.size > MAX_CV_SIZE_BYTES) {
+            return 'CV file must be 2MB or smaller.';
+        }
+        return null;
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
@@ -107,6 +129,17 @@ export default function VerificationPage() {
             }
             
             if (cvFile) {
+                const cvValidationError = validateCvFile(cvFile);
+                if (cvValidationError) {
+                    toast({
+                        variant: 'destructive',
+                        title: 'Invalid CV File',
+                        description: cvValidationError,
+                    });
+                    setIsSubmitting(false);
+                    return;
+                }
+
                 console.log('[MENTEE-VERIFY] Uploading CV file:', cvFile.name);
                 const formData = new FormData();
                 formData.append('file', cvFile);
@@ -310,6 +343,17 @@ export default function VerificationPage() {
             }
             
             if (cvFile) {
+                const cvValidationError = validateCvFile(cvFile);
+                if (cvValidationError) {
+                    toast({
+                        variant: 'destructive',
+                        title: 'Invalid CV File',
+                        description: cvValidationError,
+                    });
+                    setIsSubmitting(false);
+                    return;
+                }
+
                 const formData = new FormData();
                 formData.append('file', cvFile);
                 const uploadRes = await fetch('/api/uploadFirebase', {
@@ -395,10 +439,37 @@ export default function VerificationPage() {
                             </TabsList>
                             <TabsContent value="cv" className="mt-6">
                                 <div className="space-y-4">
-                                    <p className="text-sm text-muted-foreground">Upload your CV/Resume (PDF) and provide a link to your LinkedIn profile.</p>
+                                    <p className="text-sm text-muted-foreground">Upload your CV/Resume (PDF or DOCX) and provide a link to your LinkedIn profile.</p>
                                     <div className="grid w-full items-center gap-1.5">
-                                        <Label htmlFor="cv-file">CV/Resume (PDF)</Label>
-                                        <Input id="cv-file" type="file" accept=".pdf" onChange={(e) => setCvFile(e.target.files?.[0] || null)} />
+                                        <Label htmlFor="cv-file">CV/Resume (PDF or DOCX)</Label>
+                                        <Input
+                                            id="cv-file"
+                                            type="file"
+                                            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                            onChange={(e) => {
+                                                const selectedFile = e.target.files?.[0] || null;
+
+                                                if (!selectedFile) {
+                                                    setCvFile(null);
+                                                    return;
+                                                }
+
+                                                const cvValidationError = validateCvFile(selectedFile);
+                                                if (cvValidationError) {
+                                                    toast({
+                                                        variant: 'destructive',
+                                                        title: 'Invalid CV File',
+                                                        description: cvValidationError,
+                                                    });
+                                                    setCvFile(null);
+                                                    e.target.value = '';
+                                                    return;
+                                                }
+
+                                                setCvFile(selectedFile);
+                                            }}
+                                        />
+                                        <p className="text-xs text-gray-500">Accepted: PDF, DOCX. Maximum file size: 2MB.</p>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <Checkbox 

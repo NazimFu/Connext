@@ -5,6 +5,27 @@ import { NextResponse } from 'next/server';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
 
+const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+const ALLOWED_UPLOAD_EXTENSIONS = ['.pdf', '.docx'];
+
+function getMimeTypeFromFileName(fileName: string) {
+  const lowerName = fileName.toLowerCase();
+
+  if (lowerName.endsWith('.pdf')) {
+    return 'application/pdf';
+  }
+
+  if (lowerName.endsWith('.docx')) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+
+  return null;
+}
+
 function getAdminApp() {
   if (getApps().length > 0) return getApps()[0];
 
@@ -25,6 +46,7 @@ export async function POST(request: Request) {
     let fileName: string;
     let fileContent: string;
     let folder = 'verification';
+    let fileMimeType = '';
 
     const contentType = request.headers.get('content-type') || '';
 
@@ -39,6 +61,7 @@ export async function POST(request: Request) {
       }
 
       fileName = file.name;
+      fileMimeType = file.type || '';
       const arrayBuffer = await file.arrayBuffer();
       fileContent = Buffer.from(arrayBuffer).toString('base64');
     } else {
@@ -48,6 +71,7 @@ export async function POST(request: Request) {
         fileName = body.fileName;
         fileContent = body.fileContent;
         folder = body.folder || 'verification';
+        fileMimeType = body.fileType || '';
       } catch (parseError) {
         return NextResponse.json(
           { error: 'Invalid request format. Expected JSON or FormData' },
@@ -63,18 +87,36 @@ export async function POST(request: Request) {
       );
     }
 
+    const normalizedMimeType = fileMimeType.toLowerCase();
+    const hasAllowedExtension = ALLOWED_UPLOAD_EXTENSIONS.some((ext) => fileName.toLowerCase().endsWith(ext));
+    const hasAllowedMimeType = ALLOWED_UPLOAD_MIME_TYPES.has(normalizedMimeType);
+    if (!hasAllowedExtension && !hasAllowedMimeType) {
+      return NextResponse.json(
+        { error: 'Only PDF and DOCX files are allowed' },
+        { status: 400 }
+      );
+    }
+
+    const buffer = Buffer.from(fileContent, 'base64');
+    if (buffer.length > MAX_UPLOAD_SIZE_BYTES) {
+      return NextResponse.json(
+        { error: 'File size exceeds 2MB limit' },
+        { status: 400 }
+      );
+    }
+
     // Initialize Admin SDK
     const app = getAdminApp();
     const bucket = getStorage(app).bucket();
 
     // Upload buffer
-    const buffer = Buffer.from(fileContent, 'base64');
     const timestamp = Date.now();
     const filePath = `${folder}/${timestamp}_${fileName}`;
     const fileRef = bucket.file(filePath);
+    const resolvedMimeType = hasAllowedMimeType ? normalizedMimeType : getMimeTypeFromFileName(fileName);
 
     await fileRef.save(buffer, {
-      metadata: { contentType: 'application/pdf' },
+      metadata: { contentType: resolvedMimeType || 'application/octet-stream' },
     });
 
     // Make the file publicly readable so the attachment proxy can fetch it
