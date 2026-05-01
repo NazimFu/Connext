@@ -30,9 +30,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generateFeedbackFormUrl } from '@/lib/googleForm';
 import { convertMeetingTime, DEFAULT_TIMEZONE } from '@/lib/timezone';
 import { useTokenCycleState } from '@/hooks/use-token-cycle-state';
+import { getFeedbackUrl } from '@/lib/client/get-feedback-url';
+// ↑ shared helper that calls /api/meetings/ensure-feedback-url when URL is absent
 import type { TokenCycle } from '@/lib/token-cycle';
 
 interface MeetingRequest {
@@ -76,7 +77,6 @@ interface TaskItem {
   hasFeedback?: boolean;
   daysRemaining?: number;
   feedbackFormUrl?: string;
-  // Converted display values (user's timezone)
   displayDate?: string;
   displayTime?: string;
   tzLabel?: string;
@@ -98,13 +98,14 @@ export default function MenteeNoticesPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [meetingToCancel, setMeetingToCancel] = useState<TaskItem | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [isCancelling, setIsCancelling] = useState(false);
   const [tokenCycle, setTokenCycle] = useState<TokenCycle | null>(null);
   const [isReplenishing, setIsReplenishing] = useState(false);
+  // Track per-meeting loading state for feedback button
+  const [feedbackLoading, setFeedbackLoading] = useState<Record<string, boolean>>({});
 
   const userTz = (user as any)?.timezone || DEFAULT_TIMEZONE;
   const isNonDefaultTz = userTz !== DEFAULT_TIMEZONE;
@@ -131,7 +132,6 @@ export default function MenteeNoticesPage() {
       const taskItems: TaskItem[] = [];
       const now = new Date();
 
-      // Fetch token cycle
       const tcResponse = await fetch(`/api/token-cycle/status?userId=${user.id}&_t=${timestamp}`, {
         cache: 'no-store',
         headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
@@ -145,7 +145,6 @@ export default function MenteeNoticesPage() {
       requests.forEach((request) => {
         if (request.scheduled_status === 'cancelled') return;
 
-        // Convert stored Malaysia time → user's timezone
         const converted = convertMeetingTime(request.date, request.time, userTz);
         const meetingUtcMs = converted.utcDate.getTime();
         const twoHoursAfterMs = meetingUtcMs + 2 * 60 * 60 * 1000;
@@ -226,9 +225,8 @@ export default function MenteeNoticesPage() {
         }
       });
 
-      // Sort: pending > feedback > in_progress > upcoming > past
+      const order: Record<string, number> = { pending_request: 0, feedback: 1, in_progress_meeting: 2, meeting: 3, past_meeting: 4 };
       taskItems.sort((a, b) => {
-        const order: Record<string, number> = { pending_request: 0, feedback: 1, in_progress_meeting: 2, meeting: 3, past_meeting: 4 };
         const ao = order[a.type] ?? 5;
         const bo = order[b.type] ?? 5;
         if (ao !== bo) return ao - bo;
@@ -265,16 +263,10 @@ export default function MenteeNoticesPage() {
 
   useEffect(() => { if (user) fetchTasks(); }, [user, fetchTasks]);
 
-  // Refresh token cycle state every minute to keep time-based messages current
   useEffect(() => {
     if (!user?.id) return;
-    
-    // Fetch immediately
     fetchTokenCycleState();
-    
-    // Then set up interval to refresh every minute
     const interval = setInterval(fetchTokenCycleState, 60 * 1000);
-    
     return () => clearInterval(interval);
   }, [user?.id, fetchTokenCycleState]);
 
@@ -285,20 +277,17 @@ export default function MenteeNoticesPage() {
 
   const handleManualReplenish = async () => {
     if (!user?.id) return;
-    
+
     setIsReplenishing(true);
     try {
       await tokenCycleState.triggerReplenishment();
-      
-      // Wait a moment for the backend to update
       await new Promise(r => setTimeout(r, 1000));
-      
+
       toast({
         title: 'Success!',
         description: 'Your token has been replenished! You can now schedule your next meeting.',
       });
 
-      // Refetch tasks and token cycle
       fetchTasks();
       setIsDialogOpen(false);
     } catch (error) {
@@ -318,22 +307,56 @@ export default function MenteeNoticesPage() {
     else { toast({ variant: 'destructive', title: 'Error', description: 'Meeting link not available.' }); }
   };
 
-  const handleOpenFeedbackForm = async () => {
-    if (!selectedTask) return;
-    let formUrl = selectedTask.feedbackFormUrl;
-    if (!formUrl && user) {
-      formUrl = generateFeedbackFormUrl({
-        menteeName: user.name || 'Mentee',
-        mentorName: selectedTask.mentorName,
-        sessionDate: selectedTask.date,
-        sessionTime: selectedTask.time,
+  /**
+   * Opens the feedback form for a given task.
+   * If feedbackFormUrl is missing, calls the on-demand generation endpoint
+   * which also persists the URL to the database.
+   */
+  const openFeedbackForm = async (task: TaskItem) => {
+    if (!user?.id) return;
+
+    setFeedbackLoading(prev => ({ ...prev, [task.meetingId]: true }));
+
+    try {
+      const result = await getFeedbackUrl({
+        meetingId: task.meetingId,
+        userId: user.id,
+        existingUrl: task.feedbackFormUrl,
       });
-    }
-    if (formUrl) {
-      toast({ title: 'Feedback Form Opened', description: 'The button will disappear after you submit.' });
-      window.open(formUrl, '_blank');
+
+      if ('error' in result) {
+        toast({
+          variant: 'destructive',
+          title: 'Feedback link unavailable',
+          description: result.error,
+        });
+        return;
+      }
+
+      // Update the task in state so re-opens are instant
+      setTasks(prev =>
+        prev.map(t =>
+          t.meetingId === task.meetingId
+            ? { ...t, feedbackFormUrl: result.url }
+            : t
+        )
+      );
+      if (selectedTask?.meetingId === task.meetingId) {
+        setSelectedTask(prev => prev ? { ...prev, feedbackFormUrl: result.url } : prev);
+      }
+
+      toast({
+        title: 'Feedback Form Opened',
+        description: 'The button will disappear only after you submit the Google Form.',
+      });
+
+      window.open(result.url, '_blank');
       setIsDialogOpen(false);
-      setTimeout(() => fetchTasks(), 1000);
+
+      // Refresh to pick up feedbackFormSent status changes
+      setTimeout(() => fetchTasks(), 1500);
+    } finally {
+      setFeedbackLoading(prev => ({ ...prev, [task.meetingId]: false }));
     }
   };
 
@@ -374,7 +397,7 @@ export default function MenteeNoticesPage() {
     }
   };
 
-  const isJoinEnabled = (task: TaskItem): boolean => {
+  const isJoinButtonEnabled = (task: TaskItem): boolean => {
     if (!task.meetingUtcMs) return false;
     const now = Date.now();
     const tenMinBefore = task.meetingUtcMs - 10 * 60 * 1000;
@@ -468,7 +491,6 @@ export default function MenteeNoticesPage() {
           </div>
           <div className="p-6">
 
-            {/* Timezone notice */}
             {isNonDefaultTz && (
               <div className="mb-4 bg-teal-50 border border-teal-200 rounded-lg px-4 py-2 text-sm text-teal-800 flex items-center gap-2">
                 <span>🌐</span>
@@ -534,7 +556,6 @@ export default function MenteeNoticesPage() {
                           <motion.div key={task.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3, delay: index * 0.05 }} className="relative">
                             <div className="flex gap-6">
-                              {/* Date circle */}
                               <div className="flex flex-col items-center pt-1">
                                 <div className={`relative w-20 h-20 rounded-2xl flex flex-col items-center justify-center shadow-lg flex-shrink-0 ring-4 ring-white transform hover:scale-105 transition-transform duration-200 ${
                                   task.type === 'pending_request' ? 'bg-gradient-to-br from-amber-400 to-yellow-600'
@@ -559,7 +580,6 @@ export default function MenteeNoticesPage() {
                                 )}
                               </div>
 
-                              {/* Card */}
                               <div className={`flex-1 ${!isLast ? 'pb-8' : 'pb-2'}`}>
                                 <Card className="border-2 border-gray-100 shadow-md hover:shadow-xl transition-all duration-300 cursor-pointer group overflow-hidden bg-white hover:border-amber-300 transform hover:-translate-y-1"
                                   onClick={() => handleTaskClick(task)}>
@@ -613,7 +633,6 @@ export default function MenteeNoticesPage() {
                 )}
               </motion.div>
             ) : (
-              /* Calendar view */
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
                 <Card className="border-0 shadow-lg bg-white">
                   <CardHeader className="border-b bg-gradient-to-r from-amber-50 to-yellow-50 px-6 py-5">
@@ -727,38 +746,31 @@ export default function MenteeNoticesPage() {
                       </div>
                     )}
 
-                    {/* Token cycle replenishment status */}
                     {tokenCycle && (selectedTask.type === 'past_meeting' || selectedTask.type === 'feedback') && (
                       <div className={`p-4 rounded-xl border-2 ${
-                        tokenCycleState.status === 'ready_to_replenish' 
-                          ? 'bg-green-50 border-green-200' 
+                        tokenCycleState.status === 'ready_to_replenish'
+                          ? 'bg-green-50 border-green-200'
                           : 'bg-indigo-50 border-indigo-200'
                       }`}>
                         <div className="flex items-start gap-3">
                           {tokenCycleState.status === 'ready_to_replenish' ? (
-                            <Gift className={`w-5 h-5 ${tokenCycleState.status === 'ready_to_replenish' ? 'text-green-700' : 'text-indigo-700'} mt-0.5`} />
+                            <Gift className="w-5 h-5 text-green-700 mt-0.5" />
                           ) : (
                             <Zap className="w-5 h-5 text-indigo-700 mt-0.5" />
                           )}
                           <div className="flex-1">
                             <p className={`font-semibold text-base mb-1 ${
-                              tokenCycleState.status === 'ready_to_replenish'
-                                ? 'text-green-800'
-                                : 'text-indigo-800'
+                              tokenCycleState.status === 'ready_to_replenish' ? 'text-green-800' : 'text-indigo-800'
                             }`}>
                               {tokenCycleState.status === 'ready_to_replenish' ? '🎉 Ready to Replenish!' : '⏳ Token Replenishment Status'}
                             </p>
                             <p className={`text-sm ${
-                              tokenCycleState.status === 'ready_to_replenish'
-                                ? 'text-green-700'
-                                : 'text-indigo-700'
+                              tokenCycleState.status === 'ready_to_replenish' ? 'text-green-700' : 'text-indigo-700'
                             }`}>
                               {tokenCycleState.message}
                             </p>
                             {tokenCycleState.daysRemaining !== undefined && (
-                              <p className="text-xs text-gray-600 mt-2">
-                                {tokenCycleState.daysRemaining} days remaining
-                              </p>
+                              <p className="text-xs text-gray-600 mt-2">{tokenCycleState.daysRemaining} days remaining</p>
                             )}
                           </div>
                         </div>
@@ -767,106 +779,64 @@ export default function MenteeNoticesPage() {
                   </div>
                 )}
 
-            <DialogFooter className="gap-3 mt-2">
-              {selectedTask?.type === 'meeting' ? (
-                <>
-                  <Button 
-                    onClick={handleJoinMeeting} 
-                    className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 h-11 shadow-md"
-                    disabled={!isJoinButtonEnabled(selectedTask) || !selectedTask.googleMeetUrl && !selectedTask.meetingLink}
-                    title={!isJoinButtonEnabled(selectedTask) ? `Join available 10 minutes before the meeting` : 'Click to join the meeting'}
-                  >
-                    <Video className="w-4 h-4 mr-2" />
-                    {isJoinButtonEnabled(selectedTask) ? 'Join Meeting' : 'Not Available Yet'}
-                  </Button>
-                  <Button 
-                    onClick={() => handleCancelClick(selectedTask)}
-                    variant="destructive"
-                    className="flex-1 h-11 shadow-md"
-                  >
-                    <XCircle className="w-4 h-4 mr-2" />
-                    Cancel Meeting
-                  </Button>
-                </>
-              ) : selectedTask?.type === 'feedback' ? (
-                <>
-                  <Button 
-                    onClick={async () => {
-                      const formUrl = selectedTask.feedbackFormUrl;
-
-                      if (!formUrl) {
-                        toast({
-                          variant: 'destructive',
-                          title: 'Feedback link unavailable',
-                          description: 'The signed feedback link has not been issued yet. Refresh after the feedback email job runs.',
-                        });
-                        return;
-                      }
-
-                      toast({
-                        title: "Feedback Form Opened",
-                        description: "The button will disappear only after you submit the Google Form.",
-                      });
-                      window.open(formUrl, '_blank');
-                      setIsDialogOpen(false);
-
-                      setTimeout(() => {
-                        fetchTasks();
-                      }, 1000);
-                    }}
-                    className="flex-1 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 h-11 shadow-md"
-                  >
-                    <FileText className="w-4 h-4 mr-2" />
-                    Fill Feedback Form
-                    <ExternalLink className="w-3 h-3 ml-2" />
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setIsDialogOpen(false)} 
-                    className="flex-1 h-11 border-gray-300 hover:bg-gray-50"
-                  >
-                    Close
-                  </Button>
-                </>
-              ) : selectedTask?.type === 'past_meeting' && tokenCycleState.status === 'ready_to_replenish' ? (
-                <>
-                  <Button 
-                    onClick={handleManualReplenish}
-                    disabled={isReplenishing}
-                    className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 h-11 shadow-md"
-                  >
-                    {isReplenishing ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Replenishing...
-                      </>
-                    ) : (
-                      <>
-                        <Gift className="w-4 h-4 mr-2" />
-                        Replenish Token
-                      </>
-                    )}
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setIsDialogOpen(false)} 
-                    className="flex-1 h-11 border-gray-300 hover:bg-gray-50"
-                  >
-                    Close
-                  </Button>
-                </>
-              ) : (
-                <Button 
-                  variant="outline" 
-                  onClick={() => setIsDialogOpen(false)} 
-                  className="w-full h-11 border-amber-300 hover:bg-amber-50"
-                >
-                  Close
-                </Button>
-              )}
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+                <DialogFooter className="gap-3 mt-2">
+                  {selectedTask?.type === 'meeting' ? (
+                    <>
+                      <Button
+                        onClick={handleJoinMeeting}
+                        className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 h-11 shadow-md"
+                        disabled={!isJoinButtonEnabled(selectedTask) || (!selectedTask.googleMeetUrl && !selectedTask.meetingLink)}
+                        title={!isJoinButtonEnabled(selectedTask) ? 'Join available 10 minutes before the meeting' : 'Click to join the meeting'}
+                      >
+                        <Video className="w-4 h-4 mr-2" />
+                        {isJoinButtonEnabled(selectedTask) ? 'Join Meeting' : 'Not Available Yet'}
+                      </Button>
+                      <Button onClick={() => handleCancelClick(selectedTask)} variant="destructive" className="flex-1 h-11 shadow-md">
+                        <XCircle className="w-4 h-4 mr-2" /> Cancel Meeting
+                      </Button>
+                    </>
+                  ) : selectedTask?.type === 'feedback' ? (
+                    <>
+                      <Button
+                        onClick={() => openFeedbackForm(selectedTask)}
+                        disabled={feedbackLoading[selectedTask.meetingId]}
+                        className="flex-1 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 h-11 shadow-md"
+                      >
+                        {feedbackLoading[selectedTask.meetingId] ? (
+                          <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Loading...</>
+                        ) : (
+                          <><FileText className="w-4 h-4 mr-2" />Fill Feedback Form<ExternalLink className="w-3 h-3 ml-2" /></>
+                        )}
+                      </Button>
+                      <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="flex-1 h-11 border-gray-300 hover:bg-gray-50">
+                        Close
+                      </Button>
+                    </>
+                  ) : selectedTask?.type === 'past_meeting' && tokenCycleState.status === 'ready_to_replenish' ? (
+                    <>
+                      <Button
+                        onClick={handleManualReplenish}
+                        disabled={isReplenishing}
+                        className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 h-11 shadow-md"
+                      >
+                        {isReplenishing ? (
+                          <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Replenishing...</>
+                        ) : (
+                          <><Gift className="w-4 h-4 mr-2" />Replenish Token</>
+                        )}
+                      </Button>
+                      <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="flex-1 h-11 border-gray-300 hover:bg-gray-50">
+                        Close
+                      </Button>
+                    </>
+                  ) : (
+                    <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="w-full h-11 border-amber-300 hover:bg-amber-50">
+                      Close
+                    </Button>
+                  )}
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* Cancel dialog */}
             <AlertDialog open={cancelDialogOpen} onOpenChange={(open) => {
