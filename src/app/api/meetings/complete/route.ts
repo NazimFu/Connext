@@ -30,21 +30,12 @@ export async function POST(req: NextRequest) {
 
       const now = new Date();
       const earliestFeedbackAt = new Date(meetingDateTime.getTime() + 2 * 60 * 60 * 1000);
-      const latestValidFeedbackAt = new Date(meetingDateTime.getTime() + 14 * 24 * 60 * 60 * 1000);
 
       if (now < earliestFeedbackAt) {
         return {
           ok: false,
           status: 400,
           message: 'Feedback can only be submitted at least 2 hours after the meeting.',
-        };
-      }
-
-      if (now > latestValidFeedbackAt) {
-        return {
-          ok: false,
-          status: 400,
-          message: 'Feedback window expired. Feedback must be submitted within 14 days after the meeting.',
         };
       }
 

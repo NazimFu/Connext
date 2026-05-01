@@ -3,11 +3,8 @@ import { database } from "@/lib/cosmos";
 import { sendEmail } from "@/lib/email";
 import { cleanupExpiredMeetings } from "@/lib/cleanup-expired-meetings";
 import { fromZonedTime } from 'date-fns-tz';
-import { buildFreshTokenCycle, clampToken, evaluateTokenCycleForUser, getTokenCycleEvaluateAtIso } from '@/lib/token-cycle';
+import { buildFreshTokenCycle, clampToken, evaluateTokenCycleForUser, getTokenCycleEvaluateAtIso, isWithinRequestWindow } from '@/lib/token-cycle';
 
-// Testing config: require at least 30 minutes lead time before meeting.
-// Production target: 3 * 24 * 60 * 60 * 1000 (3 days).
-const MIN_REQUEST_LEAD_TIME_MS = 30 * 60 * 1000;
 const MY_TIMEZONE = 'Asia/Kuala_Lumpur';
 
 const parseMeetingDateTimeInMalaysia = (date: string, time: string): Date | null => {
@@ -364,9 +361,8 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date();
-    const timeUntilMeeting = scheduledMeetingDateTime.getTime() - now.getTime();
 
-    if (timeUntilMeeting <= 0) {
+    if (scheduledMeetingDateTime.getTime() <= now.getTime()) {
       return NextResponse.json(
         {
           message: 'Meeting time must be in the future.',
@@ -380,12 +376,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (timeUntilMeeting < MIN_REQUEST_LEAD_TIME_MS) {
+    const requestWindowCheck = isWithinRequestWindow(date, time, MY_TIMEZONE, now);
+    if (!requestWindowCheck.allowed) {
       return NextResponse.json(
         {
-          message: 'This meeting is too soon to request. Please choose a time at least 30 minutes from now (testing window).',
-          error: 'REQUEST_TOO_CLOSE',
-          minimumLeadTimeMinutes: Math.floor(MIN_REQUEST_LEAD_TIME_MS / 60000),
+          message: requestWindowCheck.reason || 'Meeting date must be between 1 week and 30 days from now.',
+          error: 'REQUEST_WINDOW_INVALID',
           receivedDate: date,
           receivedTime: time,
           parsedMeetingIso: scheduledMeetingDateTime.toISOString(),

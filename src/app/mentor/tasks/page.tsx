@@ -181,7 +181,6 @@ export default function MentorTasksPage() {
         }
 
         if (nd === 'accepted' && nowMs >= twoHoursAfterMs) {
-          const hoursAfter = (nowMs - meetingUtcMs) / 3600000;
           taskItems.push({
             ...baseTask, id: `past-meeting-${request.meetingId}`, type: 'past_meeting',
             title: titleDateTime,
@@ -193,18 +192,13 @@ export default function MentorTasksPage() {
             feedbackFormSent: request.feedbackFormSent,
           });
 
-          if (!userIsMentor && hoursAfter >= 2 && !request.feedbackFormSent) {
-            const daysRemaining = Math.max(0, 14 - hoursAfter / 24);
-            if (daysRemaining > 0) {
-              taskItems.push({
-                ...baseTask, id: `feedback-${request.meetingId}`, type: 'feedback',
-                title: titleDateTime,
-                description: `Feedback needed for meeting with ${request.mentor_name}`,
-                daysRemaining: Math.floor(daysRemaining),
-                hoursRemaining: Math.floor(daysRemaining * 24),
-                feedbackFormUrl: request.feedbackFormUrl,
-              });
-            }
+          if (!userIsMentor && !request.feedbackFormSent) {
+            taskItems.push({
+              ...baseTask, id: `feedback-${request.meetingId}`, type: 'feedback',
+              title: titleDateTime,
+              description: `Feedback needed for meeting with ${request.mentor_name}`,
+              feedbackFormUrl: request.feedbackFormUrl,
+            });
           }
         }
       });
@@ -406,9 +400,6 @@ export default function MentorTasksPage() {
     return now >= task.meetingUtcMs - 10 * 60 * 1000 && now < task.meetingUtcMs + 60 * 60 * 1000;
   };
 
-  const formatFeedbackDeadline = (days: number) =>
-    days <= 0 ? 'Overdue' : days < 1 ? 'Due today' : `${days}d left`;
-
   const getTaskBadgeColor = (type: string) => ({
     pending_request: 'bg-yellow-500 hover:bg-yellow-600',
     meeting: 'bg-green-500 hover:bg-green-600',
@@ -580,11 +571,6 @@ export default function MentorTasksPage() {
                                       {task.type === 'meeting' && task.hoursRemaining !== undefined && (
                                         <Badge variant="outline" className="text-xs px-3 py-1 border-blue-300 text-blue-700 font-medium">
                                           {task.hoursRemaining < 1 ? 'Starting soon' : task.hoursRemaining < 24 ? `${task.hoursRemaining}h left` : `${Math.floor(task.hoursRemaining / 24)}d left`}
-                                        </Badge>
-                                      )}
-                                      {task.type === 'feedback' && task.daysRemaining !== undefined && (
-                                        <Badge variant="outline" className="text-xs px-3 py-1 border-orange-300 text-orange-700 font-medium">
-                                          {formatFeedbackDeadline(task.daysRemaining)}
                                         </Badge>
                                       )}
                                     </div>

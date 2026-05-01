@@ -1,17 +1,56 @@
 import { NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
+import { isWithinRequestWindow, buildFreshTokenCycle, clampToken } from '@/lib/token-cycle';
 
 export async function POST(request: Request) {
   try {
-    const { mentorId, menteeId, menteeName, menteeEmail, date, time, message } = await request.json();
+    const { mentorId, menteeId, menteeName, menteeEmail, date, time, message, timezone } = await request.json();
     
     if (!mentorId || !menteeId || !menteeName || !date || !time || !message) {
       return NextResponse.json({ message: "All fields are required" }, { status: 400 });
     }
 
+    // Use provided timezone or default to UTC
+    const userTimezone = timezone || 'UTC';
+
+    // Check if request is within valid window
+    const windowCheck = isWithinRequestWindow(date, time, userTimezone);
+    if (!windowCheck.allowed) {
+      return NextResponse.json(
+        { message: windowCheck.reason || 'Request is outside the valid window' },
+        { status: 400 }
+      );
+    }
+
+    const menteeContainer = database.container('mentee');
     const mentorContainer = database.container('mentor');
     
-    // First, get the mentor document
+    // Get mentee document to check tokens
+    let menteeDoc;
+    try {
+      const { resource } = await menteeContainer.item(menteeId, menteeId).read();
+      menteeDoc = resource;
+    } catch (error: any) {
+      if (error?.code !== 404) {
+        throw error;
+      }
+      return NextResponse.json({ message: "Mentee not found" }, { status: 404 });
+    }
+
+    if (!menteeDoc) {
+      return NextResponse.json({ message: "Mentee not found" }, { status: 404 });
+    }
+
+    // Check if mentee has tokens
+    const currentTokens = clampToken(menteeDoc.tokens);
+    if (currentTokens <= 0) {
+      return NextResponse.json(
+        { message: "Insufficient tokens. Please wait for token replenishment or submit pending feedback." },
+        { status: 402 }
+      );
+    }
+
+    // Get mentor document
     const querySpec = {
       query: "SELECT * FROM c WHERE c.mentorUID = @mentorId OR c.id = @mentorId",
       parameters: [
@@ -33,8 +72,9 @@ export async function POST(request: Request) {
     const mentor = mentors[0];
     
     // Create a new meeting request
+    const meetingId = `meet_${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newMeeting = {
-      meetingId: `meet_${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      meetingId,
       menteeUID: menteeId,
       date,
       time,
@@ -48,32 +88,35 @@ export async function POST(request: Request) {
       message
     };
 
+    // Deduct token and create token cycle
+    const nowIso = new Date().toISOString();
+    menteeDoc.tokens = currentTokens - 1;
+    menteeDoc.token_cycle = buildFreshTokenCycle(meetingId, date, time, nowIso);
+
+    console.log(`[Meeting Request] Token deducted for mentee ${menteeId}. Before: ${currentTokens}, After: ${menteeDoc.tokens}, TokenUsedAt: ${nowIso}`);
+
     // Add to mentor's scheduling array
     if (!mentor.scheduling) {
       mentor.scheduling = [];
     }
     mentor.scheduling.push(newMeeting);
 
-    // Replace the entire document in Cosmos DB
+    // Update both documents
+    await menteeContainer.item(menteeId, menteeId).replace(menteeDoc);
     await mentorContainer.item(mentor.id, mentor.mentorUID).replace(mentor);
 
     // Add mentor to mentee's requested_mentors array
     try {
-      const menteeContainer = database.container('mentee');
-      const { resource: mentee } = await menteeContainer.item(menteeId, menteeId).read();
-      
-      if (mentee) {
-        const requestedMentors = mentee.requested_mentors || [];
-        if (!requestedMentors.includes(mentorId)) {
-          const patchOperations = [
-            {
-              op: (requestedMentors.length > 0 ? 'set' : 'add') as 'set' | 'add',
-              path: '/requested_mentors',
-              value: [...requestedMentors, mentorId],
-            },
-          ];
-          await menteeContainer.item(menteeId, menteeId).patch(patchOperations);
-        }
+      const requestedMentors = menteeDoc.requested_mentors || [];
+      if (!requestedMentors.includes(mentorId)) {
+        const patchOperations = [
+          {
+            op: (requestedMentors.length > 0 ? 'set' : 'add') as 'set' | 'add',
+            path: '/requested_mentors',
+            value: [...requestedMentors, mentorId],
+          },
+        ];
+        await menteeContainer.item(menteeId, menteeId).patch(patchOperations);
       }
     } catch (menteeError) {
       console.error('Failed to update mentee requested mentors:', menteeError);
@@ -82,7 +125,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ 
       message: "Meeting request created successfully",
-      meeting: newMeeting
+      meeting: newMeeting,
+      tokensRemaining: menteeDoc.tokens
     });
   } catch (error) {
     console.error('Failed to create meeting request', error);

@@ -6,7 +6,7 @@ import { GOOGLE_FORM_CONFIG, generateFeedbackFormUrl } from '@/lib/googleForm';
 import { parseMeetingDateTime } from '@/lib/token-cycle';
 
 const FEEDBACK_FORM_OPEN_DELAY_MS = 2 * 60 * 60 * 1000;
-const FEEDBACK_FORM_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+const FEEDBACK_TOKEN_TTL_MS = 3650 * 24 * 60 * 60 * 1000;
 const FEEDBACK_TOKEN_KIND = 'feedback-submit';
 
 export type FeedbackTokenPayload = {
@@ -77,7 +77,6 @@ export const getFeedbackWindow = (sessionDate: string, sessionTime: string) => {
   return {
     meetingDateTime,
     opensAt: new Date(meetingDateTime.getTime() + FEEDBACK_FORM_OPEN_DELAY_MS),
-    closesAt: new Date(meetingDateTime.getTime() + FEEDBACK_FORM_WINDOW_MS),
   };
 };
 
@@ -87,8 +86,8 @@ export const isWithinFeedbackWindow = (
   now: Date = new Date()
 ): boolean => {
   try {
-    const { opensAt, closesAt } = getFeedbackWindow(sessionDate, sessionTime);
-    return now >= opensAt && now <= closesAt;
+    const { opensAt } = getFeedbackWindow(sessionDate, sessionTime);
+    return now >= opensAt;
   } catch {
     return false;
   }
@@ -110,13 +109,12 @@ export const createFeedbackToken = (
     throw new Error('mentorUid is required to sign a feedback token');
   }
 
-  const { closesAt } = getFeedbackWindow(sessionDate, sessionTime);
   const payload: FeedbackTokenPayload = {
     kind: FEEDBACK_TOKEN_KIND,
     meetingId,
     mentorUid,
     iat: Math.floor(now.getTime() / 1000),
-    exp: Math.floor(closesAt.getTime() / 1000),
+    exp: Math.floor((now.getTime() + FEEDBACK_TOKEN_TTL_MS) / 1000),
   };
 
   const encodedPayload = encodeBase64Url(JSON.stringify(payload));

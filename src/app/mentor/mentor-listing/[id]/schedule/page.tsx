@@ -16,6 +16,7 @@ import { Clock, Loader2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRequireAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
+import { getRequestWindowBounds } from "@/lib/token-cycle";
 
 // A full list of possible times to ensure consistent layout
 const allPossibleTimes = [
@@ -49,6 +50,8 @@ export default function SchedulePage() {
   const [availableTimesForDay, setAvailableTimesForDay] = useState<string[]>(
     []
   );
+
+  const { earliestMeetingDate, latestMeetingDate } = getRequestWindowBounds(new Date());
 
   useEffect(() => {
     async function fetchMentor() {
@@ -297,11 +300,11 @@ export default function SchedulePage() {
                         selected={date}
                         onSelect={setDate}
                         className="rounded-md border w-full"
-                        disabled={(d) =>
-                          d <
-                          new Date(new Date().setDate(new Date().getDate() - 1))
-                        }
+                        disabled={(d) => d < earliestMeetingDate || d > latestMeetingDate}
                       />
+                      <p className="mt-2 text-xs text-amber-700">
+                        You can request only for dates between 1 week and 1 month from today.
+                      </p>
                     </div>
                   </div>
                   <div className="min-w-0 overflow-hidden">

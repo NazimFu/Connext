@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { database } from "@/lib/cosmos";
-import { getTokenCycleEvaluateAtIso, parseMeetingDateTime } from '@/lib/token-cycle';
+import { canAcceptFeedbackSubmission, getMeetingDateTime, type TokenCycle } from '@/lib/token-cycle';
 
 export async function POST(req: NextRequest) {
   try {
-    const { meetingId, menteeId } = await req.json();
+    const { meetingId, menteeId, timezone } = await req.json();
 
     if (!meetingId || !menteeId) {
       return NextResponse.json(
@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const userTimezone = timezone || 'UTC';
     const mentorContainer = database.container('mentor');
     const menteeContainer = database.container('mentee');
 
@@ -82,7 +83,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const meetingDateTime = parseMeetingDateTime(meeting.date, meeting.time);
+    const meetingDateTime = getMeetingDateTime(meeting.date, meeting.time, userTimezone);
     if (!meetingDateTime) {
       return NextResponse.json(
         { message: 'Invalid meeting date/time format.' },
@@ -91,34 +92,39 @@ export async function POST(req: NextRequest) {
     }
 
     const now = new Date();
-    const earliestFeedbackAt = new Date(meetingDateTime.getTime() + 2 * 60 * 60 * 1000);
-    const latestValidFeedbackAt = new Date(meetingDateTime.getTime() + 14 * 24 * 60 * 60 * 1000);
 
-    if (now < earliestFeedbackAt) {
-      return NextResponse.json(
-        {
-          message: 'Feedback can only be submitted at least 2 hours after the meeting.',
-          validFrom: earliestFeedbackAt.toISOString(),
-        },
-        { status: 400 }
-      );
-    }
-
-    if (now > latestValidFeedbackAt) {
-      return NextResponse.json(
-        {
-          message: 'Feedback window expired. Feedback must be submitted within 14 days after the meeting.',
-          validUntil: latestValidFeedbackAt.toISOString(),
-        },
-        { status: 400 }
-      );
+    // Use the new comprehensive timing validation
+    // First check if token cycle exists and validate timing
+    if (user.token_cycle && user.token_cycle.status === 'pending') {
+      const feedbackCheck = canAcceptFeedbackSubmission(user.token_cycle, userTimezone, now);
+      if (!feedbackCheck.accepted) {
+        return NextResponse.json(
+          {
+            message: feedbackCheck.reason || 'Feedback submission is not allowed at this time.',
+          },
+          { status: 400 }
+        );
+      }
+    } else {
+      // Fallback to basic timing check if no token cycle
+      const earliestFeedbackAt = new Date(meetingDateTime.getTime() + 2 * 60 * 60 * 1000);
+      if (now < earliestFeedbackAt) {
+        const minutesRemaining = Math.ceil((earliestFeedbackAt.getTime() - now.getTime()) / (60 * 1000));
+        return NextResponse.json(
+          {
+            message: `Feedback can only be submitted at least 2 hours after the meeting. Try again in ${minutesRemaining} minutes.`,
+            validFrom: earliestFeedbackAt.toISOString(),
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Mark feedback as sent
     user.scheduling[scheduleIndex].feedbackFormSent = true;
-    user.scheduling[scheduleIndex].feedbackFormSentAt = new Date().toISOString();
+    user.scheduling[scheduleIndex].feedbackFormSentAt = now.toISOString();
 
-    // Record feedback for cycle evaluation (token is decided at +30 days, not now).
+    // Record feedback for cycle evaluation
     if (user.token_cycle && user.token_cycle.status === 'pending') {
       if (!user.token_cycle.meetingId || user.token_cycle.meetingId === meetingId) {
         user.token_cycle.meetingId = meetingId;
@@ -126,20 +132,21 @@ export async function POST(req: NextRequest) {
         user.token_cycle.meetingTime = meeting.time;
         user.token_cycle.feedbackSubmittedAt = now.toISOString();
         user.token_cycle.feedbackValid = true;
+        user.token_cycle.feedbackVerificationSource = 'direct-submission';
+        
+        console.log(`[Feedback Submission] Feedback submitted for meeting ${meetingId}. Marked valid for cycle evaluation at ${now.toISOString()}`);
       }
     }
 
     // Update the document
     await containerToUpdate.item(userId, userId).replace(user);
 
-    console.log(`📝 Feedback submitted for meeting ${meetingId} - marked valid for cycle evaluation`);
-
     return NextResponse.json({
-      message: "Feedback submitted successfully",
+      message: "Feedback submitted successfully. Your token will be replenished after the 30-day cooldown once feedback is valid.",
       success: true,
       newTokenBalance: user.tokens || 0,
       tokenReplenished: false,
-      tokenReplenishAt: getTokenCycleEvaluateAtIso(user.token_cycle?.tokenUsedAt),
+      feedbackSubmittedAt: now.toISOString(),
     });
 
   } catch (error) {

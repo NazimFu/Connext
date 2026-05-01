@@ -27,6 +27,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getGoogleDriveImageUrl } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { DEFAULT_TIMEZONE, convertMeetingTime, getUserTimezone } from "@/lib/timezone";
+import { getRequestWindowBounds } from "@/lib/token-cycle";
 
 const MY_TZ = DEFAULT_TIMEZONE; // "Asia/Kuala_Lumpur"
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -150,10 +151,9 @@ export default function MentorDetailPage() {
 }, [mentor, date, userTz, bookedSlots, isNonDefaultTz]);
 
   const calendarModifiers = useMemo(() => {
-    const today = new Date();
-    const maxDate = addDays(today, 60);
+    const { earliestMeetingDate, latestMeetingDate } = getRequestWindowBounds(new Date());
     return {
-      disabled: (day: Date) => day < today || day > maxDate,
+      disabled: (day: Date) => day < earliestMeetingDate || day > latestMeetingDate,
       available: (day: Date) => availableDays.has(WEEKDAYS[getDay(day)].toLowerCase()),
     };
   }, [availableDays]);
@@ -335,6 +335,9 @@ export default function MentorDetailPage() {
                   <div className="mt-1 text-xs text-green-700 flex items-center gap-1.5">
                     <div className="w-2 h-2 rounded-full bg-green-200 border border-green-600/50" />
                     Available dates highlighted in green
+                  </div>
+                  <div className="mt-1 text-xs text-amber-700">
+                    You can request only for dates between 1 week and 1 month from today.
                   </div>
                 </div>
 

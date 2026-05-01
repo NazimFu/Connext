@@ -72,11 +72,10 @@ export async function POST(req: NextRequest) {
 
     const now = new Date();
     const earliestFeedbackAt = new Date(meetingDateTime.getTime() + 2 * 60 * 60 * 1000);
-    const latestValidFeedbackAt = new Date(meetingDateTime.getTime() + 14 * 24 * 60 * 60 * 1000);
 
-    if (now < earliestFeedbackAt || now > latestValidFeedbackAt) {
+    if (now < earliestFeedbackAt) {
       return NextResponse.json(
-        { message: 'Feedback can only be submitted from 2 hours to 14 days after the meeting.' },
+        { message: 'Feedback can only be submitted at least 2 hours after the meeting.' },
         { status: 400 }
       );
     }

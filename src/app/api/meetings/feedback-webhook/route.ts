@@ -8,6 +8,7 @@ import {
   sanitizeSubmittedResponses,
 } from '@/lib/meeting-feedback';
 import { verifyFeedbackToken } from '@/lib/server/feedback-form';
+import { canAcceptFeedbackSubmission } from '@/lib/token-cycle';
 
 export const runtime = 'nodejs';
 
@@ -85,11 +86,22 @@ const syncPendingTokenCycle = (
   submittedAt: string
 ) => {
   if (user?.token_cycle?.status !== 'pending') {
+    console.log('[Feedback Webhook] Token cycle not pending, skipping sync');
     return;
   }
 
   if (user.token_cycle.meetingId && user.token_cycle.meetingId !== meetingId) {
+    console.log('[Feedback Webhook] Token cycle meeting ID mismatch, skipping sync');
     return;
+  }
+
+  // Check if feedback submission is within acceptable timing window (2 hours after meeting)
+  const timezone = user.timezone || 'UTC';
+  const feedbackCheckResult = canAcceptFeedbackSubmission(user.token_cycle, timezone, new Date(submittedAt));
+  
+  if (!feedbackCheckResult.accepted) {
+    console.log(`[Feedback Webhook] Feedback not accepted: ${feedbackCheckResult.reason}`);
+    throw new Error(`Feedback submission rejected: ${feedbackCheckResult.reason}`);
   }
 
   user.token_cycle.meetingId = meetingId;
@@ -98,6 +110,8 @@ const syncPendingTokenCycle = (
   user.token_cycle.feedbackSubmittedAt = submittedAt;
   user.token_cycle.feedbackValid = true;
   user.token_cycle.feedbackVerificationSource = 'google-form-webhook';
+  
+  console.log(`[Feedback Webhook] Token cycle updated. Feedback valid, submitted at: ${submittedAt}`);
 };
 
 const findRequesterRecord = async (
@@ -260,31 +274,45 @@ export async function POST(request: NextRequest) {
       !requesterMeeting.feedbackFormSentAt;
 
     if (mentorNeedsSubmissionSync || requesterNeedsSubmissionSync) {
-      applyFeedbackSubmission(
-        mentorDoc.scheduling[scheduleIndex],
-        canonicalFeedbackRecord
-      );
-      if (!mentorDoc.scheduling[scheduleIndex].feedbackFormResponseId && responseId) {
-        mentorDoc.scheduling[scheduleIndex].feedbackFormResponseId = responseId;
-      }
-      applyFeedbackSubmission(
-        requesterRecord.doc.scheduling[requesterMeetingIndex],
-        canonicalFeedbackRecord
-      );
-      if (!requesterRecord.doc.scheduling[requesterMeetingIndex].feedbackFormResponseId && responseId) {
-        requesterRecord.doc.scheduling[requesterMeetingIndex].feedbackFormResponseId = responseId;
-      }
-      syncPendingTokenCycle(
-        requesterRecord.doc,
-        requesterRecord.doc.scheduling[requesterMeetingIndex],
-        verification.payload.meetingId,
-        canonicalFeedbackRecord.submittedAt
-      );
+      try {
+        applyFeedbackSubmission(
+          mentorDoc.scheduling[scheduleIndex],
+          canonicalFeedbackRecord
+        );
+        if (!mentorDoc.scheduling[scheduleIndex].feedbackFormResponseId && responseId) {
+          mentorDoc.scheduling[scheduleIndex].feedbackFormResponseId = responseId;
+        }
+        applyFeedbackSubmission(
+          requesterRecord.doc.scheduling[requesterMeetingIndex],
+          canonicalFeedbackRecord
+        );
+        if (!requesterRecord.doc.scheduling[requesterMeetingIndex].feedbackFormResponseId && responseId) {
+          requesterRecord.doc.scheduling[requesterMeetingIndex].feedbackFormResponseId = responseId;
+        }
+        
+        // This will throw if feedback timing is invalid
+        syncPendingTokenCycle(
+          requesterRecord.doc,
+          requesterRecord.doc.scheduling[requesterMeetingIndex],
+          verification.payload.meetingId,
+          canonicalFeedbackRecord.submittedAt
+        );
 
-      await requesterRecord.container
-        .item(requesterRecord.doc.id, requesterRecord.doc.id)
-        .replace(requesterRecord.doc);
-      await mentorContainer.item(mentorDoc.id, mentorDoc.id).replace(mentorDoc);
+        await requesterRecord.container
+          .item(requesterRecord.doc.id, requesterRecord.doc.id)
+          .replace(requesterRecord.doc);
+        await mentorContainer.item(mentorDoc.id, mentorDoc.id).replace(mentorDoc);
+      } catch (tokenCycleError: any) {
+        console.error('[Feedback Webhook] Token cycle sync error:', tokenCycleError);
+        // If the feedback is too early, reject the webhook
+        if (tokenCycleError.message?.includes('Feedback submission rejected')) {
+          return NextResponse.json(
+            { message: 'Feedback is too early. Please submit after the meeting + 2 hours.' },
+            { status: 400 }
+          );
+        }
+        throw tokenCycleError;
+      }
     }
 
     if (meeting.mentorFeedbackNotifiedAt) {

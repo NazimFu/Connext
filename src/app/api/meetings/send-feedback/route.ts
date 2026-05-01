@@ -6,7 +6,6 @@ import { createSignedFeedbackFormLink } from '@/lib/server/feedback-form';
 import { parseMeetingDateTime } from '@/lib/token-cycle';
 
 const FEEDBACK_SEND_DELAY_MS = 2 * 60 * 60 * 1000;
-const FEEDBACK_VALID_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
 type UserDoc = {
   id: string;
@@ -43,9 +42,8 @@ const shouldSendFeedbackForMeeting = (meeting: any, now: Date): boolean => {
   }
 
   const opensAt = meetingDateTime.getTime() + FEEDBACK_SEND_DELAY_MS;
-  const closesAt = meetingDateTime.getTime() + FEEDBACK_VALID_WINDOW_MS;
 
-  return now.getTime() >= opensAt && now.getTime() <= closesAt;
+  return now.getTime() >= opensAt;
 };
 
 const findMeetingIndex = (doc: UserDoc | null | undefined, meetingId: string): number => {

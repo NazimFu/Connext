@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/meetings/send-feedback",
-      "schedule": "0 * * * *"
+      "schedule": "* * * * *"
     }
   ]
 }

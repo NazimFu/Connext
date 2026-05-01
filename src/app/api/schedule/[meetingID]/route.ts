@@ -4,7 +4,9 @@ import { PatchOperation } from '@azure/cosmos';
 import { v4 as uuidv4 } from 'uuid';
 import type { Scheduling, Mentee, Mentor } from '@/lib/types';
 import { sendEmail } from '@/lib/email';
-import { clampToken } from '@/lib/token-cycle';
+import { clampToken, isWithinRequestWindow } from '@/lib/token-cycle';
+
+const MY_TIMEZONE = 'Asia/Kuala_Lumpur';
 
 // -----------------------------
 // Helper: Check if slot is available
@@ -109,6 +111,19 @@ export async function POST(request: Request) {
 
     if (!mentorId || !menteeId || !date || !time || !message) {
       return NextResponse.json({ message: 'Missing required fields' }, { status: 400 });
+    }
+
+    const requestWindowCheck = isWithinRequestWindow(date, time, MY_TIMEZONE, new Date());
+    if (!requestWindowCheck.allowed) {
+      return NextResponse.json(
+        {
+          message: requestWindowCheck.reason || 'Meeting date must be between 1 week and 30 days from now.',
+          error: 'REQUEST_WINDOW_INVALID',
+          receivedDate: date,
+          receivedTime: time,
+        },
+        { status: 400 }
+      );
     }
 
     // Check slot availability

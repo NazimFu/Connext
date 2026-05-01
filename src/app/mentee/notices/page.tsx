@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { CheckSquare, Calendar as CalendarIcon, Clock, List, Calendar, ChevronLeft, ChevronRight, Video, User, Mail, AlertCircle, FileText, ExternalLink, XCircle } from 'lucide-react';
+import { CheckSquare, Calendar as CalendarIcon, Clock, List, Calendar, ChevronLeft, ChevronRight, Video, User, Mail, AlertCircle, FileText, ExternalLink, XCircle, Gift, Zap } from 'lucide-react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { generateFeedbackFormUrl } from '@/lib/googleForm';
 import { convertMeetingTime, DEFAULT_TIMEZONE } from '@/lib/timezone';
+import { useTokenCycleState } from '@/hooks/use-token-cycle-state';
+import type { TokenCycle } from '@/lib/token-cycle';
 
 interface MeetingRequest {
   meetingId: string;
@@ -101,9 +103,17 @@ export default function MenteeNoticesPage() {
   const [meetingToCancel, setMeetingToCancel] = useState<TaskItem | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [isCancelling, setIsCancelling] = useState(false);
+  const [tokenCycle, setTokenCycle] = useState<TokenCycle | null>(null);
+  const [isReplenishing, setIsReplenishing] = useState(false);
 
   const userTz = (user as any)?.timezone || DEFAULT_TIMEZONE;
   const isNonDefaultTz = userTz !== DEFAULT_TIMEZONE;
+
+  const tokenCycleState = useTokenCycleState({
+    tokenCycle,
+    timezone: userTz,
+    userId: user?.id,
+  });
 
   const fetchTasks = useCallback(async () => {
     if (!user) return;
@@ -120,6 +130,17 @@ export default function MenteeNoticesPage() {
       const requests: MeetingRequest[] = await response.json();
       const taskItems: TaskItem[] = [];
       const now = new Date();
+
+      // Fetch token cycle
+      const tcResponse = await fetch(`/api/token-cycle/status?userId=${user.id}&_t=${timestamp}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+      });
+
+      if (tcResponse.ok) {
+        const tcData = await tcResponse.json();
+        setTokenCycle(tcData.tokenCycle);
+      }
 
       requests.forEach((request) => {
         if (request.scheduled_status === 'cancelled') return;
@@ -181,7 +202,6 @@ export default function MenteeNoticesPage() {
 
         if (request.decision === 'accepted' && now.getTime() >= twoHoursAfterMs) {
           const hasFeedback = !!request.feedbackFormSent;
-          const hoursAfter = (now.getTime() - meetingUtcMs) / (1000 * 60 * 60);
 
           taskItems.push({
             ...baseTask,
@@ -193,20 +213,15 @@ export default function MenteeNoticesPage() {
             feedbackFormUrl: request.feedbackFormUrl,
           });
 
-          if (hoursAfter >= 2 && !hasFeedback) {
-            const daysRemaining = Math.max(0, 14 - hoursAfter / 24);
-            if (daysRemaining > 0) {
-              taskItems.push({
-                ...baseTask,
-                id: `feedback-${request.meetingId}`,
-                type: 'feedback',
-                title: titleDateTime,
-                description: `Feedback needed for meeting with ${request.mentor_name}`,
-                daysRemaining: Math.floor(daysRemaining),
-                hoursRemaining: Math.floor(daysRemaining * 24),
-                feedbackFormUrl: request.feedbackFormUrl,
-              });
-            }
+          if (!hasFeedback) {
+            taskItems.push({
+              ...baseTask,
+              id: `feedback-${request.meetingId}`,
+              type: 'feedback',
+              title: titleDateTime,
+              description: `Feedback needed for meeting with ${request.mentor_name}`,
+              feedbackFormUrl: request.feedbackFormUrl,
+            });
           }
         }
       });
@@ -218,7 +233,7 @@ export default function MenteeNoticesPage() {
         const bo = order[b.type] ?? 5;
         if (ao !== bo) return ao - bo;
         if (a.type === 'meeting') return (a.hoursRemaining || 0) - (b.hoursRemaining || 0);
-        if (a.type === 'feedback') return (a.daysRemaining || 0) - (b.daysRemaining || 0);
+        if (a.type === 'feedback') return (a.meetingUtcMs || 0) - (b.meetingUtcMs || 0);
         if (a.type === 'past_meeting') return (b.meetingUtcMs || 0) - (a.meetingUtcMs || 0);
         return 0;
       });
@@ -231,11 +246,70 @@ export default function MenteeNoticesPage() {
     }
   }, [user, toast, userTz]);
 
+  const fetchTokenCycleState = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const timestamp = new Date().getTime();
+      const response = await fetch(`/api/token-cycle/status?userId=${user.id}&_t=${timestamp}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setTokenCycle(data.tokenCycle);
+      }
+    } catch (error) {
+      console.error('Failed to refresh token cycle state:', error);
+    }
+  }, [user?.id]);
+
   useEffect(() => { if (user) fetchTasks(); }, [user, fetchTasks]);
+
+  // Refresh token cycle state every minute to keep time-based messages current
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    // Fetch immediately
+    fetchTokenCycleState();
+    
+    // Then set up interval to refresh every minute
+    const interval = setInterval(fetchTokenCycleState, 60 * 1000);
+    
+    return () => clearInterval(interval);
+  }, [user?.id, fetchTokenCycleState]);
 
   const handleTaskClick = (task: TaskItem) => {
     setSelectedTask(task);
     setIsDialogOpen(true);
+  };
+
+  const handleManualReplenish = async () => {
+    if (!user?.id) return;
+    
+    setIsReplenishing(true);
+    try {
+      await tokenCycleState.triggerReplenishment();
+      
+      // Wait a moment for the backend to update
+      await new Promise(r => setTimeout(r, 1000));
+      
+      toast({
+        title: 'Success!',
+        description: 'Your token has been replenished! You can now schedule your next meeting.',
+      });
+
+      // Refetch tasks and token cycle
+      fetchTasks();
+      setIsDialogOpen(false);
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: tokenCycleState.replenishError || 'Failed to replenish token',
+      });
+    } finally {
+      setIsReplenishing(false);
+    }
   };
 
   const handleJoinMeeting = () => {
@@ -299,9 +373,6 @@ export default function MenteeNoticesPage() {
       setIsCancelling(false);
     }
   };
-
-  const formatFeedbackDeadline = (days: number) =>
-    days <= 0 ? 'Overdue' : days < 1 ? 'Due today' : `${days}d left`;
 
   const isJoinEnabled = (task: TaskItem): boolean => {
     if (!task.meetingUtcMs) return false;
@@ -504,11 +575,6 @@ export default function MenteeNoticesPage() {
                                             : `${Math.floor(task.hoursRemaining / 24)}d left`}
                                         </Badge>
                                       )}
-                                      {task.type === 'feedback' && task.daysRemaining !== undefined && (
-                                        <Badge variant="outline" className="text-xs px-3 py-1 border-orange-300 text-orange-700 font-medium">
-                                          {formatFeedbackDeadline(task.daysRemaining)}
-                                        </Badge>
-                                      )}
                                     </div>
                                     <div className="space-y-3.5">
                                       <div className="flex items-center gap-3">
@@ -655,10 +721,45 @@ export default function MenteeNoticesPage() {
                             <p className="font-semibold text-base text-orange-800 mb-1">Feedback Required</p>
                             <p className="text-sm text-orange-700">
                               Submit feedback to complete your cycle.
-                              {selectedTask.daysRemaining !== undefined && (
-                                <span className="font-semibold"> Deadline: {formatFeedbackDeadline(selectedTask.daysRemaining)}</span>
-                              )}
                             </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Token cycle replenishment status */}
+                    {tokenCycle && (selectedTask.type === 'past_meeting' || selectedTask.type === 'feedback') && (
+                      <div className={`p-4 rounded-xl border-2 ${
+                        tokenCycleState.status === 'ready_to_replenish' 
+                          ? 'bg-green-50 border-green-200' 
+                          : 'bg-indigo-50 border-indigo-200'
+                      }`}>
+                        <div className="flex items-start gap-3">
+                          {tokenCycleState.status === 'ready_to_replenish' ? (
+                            <Gift className={`w-5 h-5 ${tokenCycleState.status === 'ready_to_replenish' ? 'text-green-700' : 'text-indigo-700'} mt-0.5`} />
+                          ) : (
+                            <Zap className="w-5 h-5 text-indigo-700 mt-0.5" />
+                          )}
+                          <div className="flex-1">
+                            <p className={`font-semibold text-base mb-1 ${
+                              tokenCycleState.status === 'ready_to_replenish'
+                                ? 'text-green-800'
+                                : 'text-indigo-800'
+                            }`}>
+                              {tokenCycleState.status === 'ready_to_replenish' ? '🎉 Ready to Replenish!' : '⏳ Token Replenishment Status'}
+                            </p>
+                            <p className={`text-sm ${
+                              tokenCycleState.status === 'ready_to_replenish'
+                                ? 'text-green-700'
+                                : 'text-indigo-700'
+                            }`}>
+                              {tokenCycleState.message}
+                            </p>
+                            {tokenCycleState.daysRemaining !== undefined && (
+                              <p className="text-xs text-gray-600 mt-2">
+                                {tokenCycleState.daysRemaining} days remaining
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -718,6 +819,33 @@ export default function MenteeNoticesPage() {
                     <FileText className="w-4 h-4 mr-2" />
                     Fill Feedback Form
                     <ExternalLink className="w-3 h-3 ml-2" />
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setIsDialogOpen(false)} 
+                    className="flex-1 h-11 border-gray-300 hover:bg-gray-50"
+                  >
+                    Close
+                  </Button>
+                </>
+              ) : selectedTask?.type === 'past_meeting' && tokenCycleState.status === 'ready_to_replenish' ? (
+                <>
+                  <Button 
+                    onClick={handleManualReplenish}
+                    disabled={isReplenishing}
+                    className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 h-11 shadow-md"
+                  >
+                    {isReplenishing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Replenishing...
+                      </>
+                    ) : (
+                      <>
+                        <Gift className="w-4 h-4 mr-2" />
+                        Replenish Token
+                      </>
+                    )}
                   </Button>
                   <Button 
                     variant="outline" 
