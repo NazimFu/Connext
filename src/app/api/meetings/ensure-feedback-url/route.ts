@@ -6,12 +6,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
-import { parseMeetingDateTime } from '@/lib/token-cycle';
+import { convertMeetingTime } from '@/lib/timezone';
 
 // Inline the signed-link builder so this route has no import dependency on the
 // server-only feedback-form module (which may require env vars only available
 // server-side and is already imported below via dynamic require if needed).
-// We replicate only what we need: token + formUrl construction.
 async function buildSignedLink(params: {
   meetingId: string;
   mentorUid: string;
@@ -21,7 +20,6 @@ async function buildSignedLink(params: {
   sessionTime: string;
   now: Date;
 }): Promise<{ feedbackToken: string; formUrl: string }> {
-  // Dynamically import to keep bundle clean
   const { createSignedFeedbackFormLink } = await import('@/lib/server/feedback-form');
   return createSignedFeedbackFormLink(params, params.now);
 }
@@ -79,16 +77,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Guard: must be at least 2 hours after meeting start
-    const meetingDateTime = parseMeetingDateTime(mentorMeeting.date, mentorMeeting.time);
-    if (!meetingDateTime) {
-      return NextResponse.json(
-        { error: 'Invalid meeting date/time' },
-        { status: 400 }
-      );
-    }
+    // Guard: must be at least 2 hours after meeting start.
+    // IMPORTANT: Meeting times are stored in Malaysia time (Asia/Kuala_Lumpur).
+    // Use convertMeetingTime to correctly interpret them as Malaysia wall-clock
+    // time rather than browser/server local time.
+    const { utcDate: meetingUtcDate } = convertMeetingTime(
+      mentorMeeting.date,
+      mentorMeeting.time,
+      'Asia/Kuala_Lumpur'
+    );
+
     const now = new Date();
-    const earliestAt = new Date(meetingDateTime.getTime() + 2 * 60 * 60 * 1000);
+    const earliestAt = new Date(meetingUtcDate.getTime() + 2 * 60 * 60 * 1000);
+
     if (now < earliestAt) {
       const minutesLeft = Math.ceil((earliestAt.getTime() - now.getTime()) / 60000);
       return NextResponse.json(
@@ -101,10 +102,6 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 2. Reuse existing URL if already generated ───────────────────────────
-    const existingToken =
-      mentorMeeting.feedbackToken ||
-      (mentorMeeting.feedbackFormUrl ? 'exists' : null);
-
     if (mentorMeeting.feedbackFormUrl && mentorMeeting.feedbackToken) {
       return NextResponse.json({
         success: true,

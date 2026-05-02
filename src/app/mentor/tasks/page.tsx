@@ -15,7 +15,6 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generateFeedbackFormUrl } from '@/lib/googleForm';
 import { convertMeetingTime, DEFAULT_TIMEZONE } from '@/lib/timezone';
 import { getFeedbackUrl } from '@/lib/client/get-feedback-url';
 
@@ -306,54 +305,51 @@ export default function MentorTasksPage() {
   };
 
   const handleJoinMeeting = () => {
-    // Try googleMeetUrl first, then fall back to meetingLink
     const meetingUrl = selectedTask?.googleMeetUrl || selectedTask?.meetingLink;
-    
     if (meetingUrl) {
       window.open(meetingUrl, '_blank', 'noopener,noreferrer');
       setIsDialogOpen(false);
     } else {
-      toast({
-        variant: 'destructive',
-        title: "Error",
-        description: "Meeting link not available. Please contact support.",
-      });
+      toast({ variant: 'destructive', title: 'Error', description: 'Meeting link not available. Please contact support.' });
     }
   };
 
-  const handleOpenFeedbackForm = async (task?: any) => {
-  const target = task || null; // will be selectedTask in real code
-  if (!target || !user?.id) return;
- 
-  setFeedbackLoading(prev => ({ ...prev, [target.meetingId]: true }));
-  try {
-    const result = await getFeedbackUrl({
-      meetingId: target.meetingId,
-      userId: user.id,
-      existingUrl: target.feedbackFormUrl,
-    });
-  
-    if ('error' in result) {
-      toast({ variant: 'destructive', title: 'Feedback link unavailable', description: result.error });
-      return;
+  // FIX: This is now a proper async function that takes a task parameter.
+  // It must NOT be called as handleOpenFeedbackForm(task) directly inside JSX onClick,
+  // because that invokes it immediately and passes the Promise as the handler.
+  // Always wrap in a lambda: onClick={() => handleOpenFeedbackForm(task)}
+  const handleOpenFeedbackForm = async (task: TaskItem) => {
+    if (!task || !user?.id) return;
+
+    setFeedbackLoading(prev => ({ ...prev, [task.meetingId]: true }));
+    try {
+      const result = await getFeedbackUrl({
+        meetingId: task.meetingId,
+        userId: user.id,
+        existingUrl: task.feedbackFormUrl,
+      });
+
+      if ('error' in result) {
+        toast({ variant: 'destructive', title: 'Feedback link unavailable', description: result.error });
+        return;
+      }
+
+      // Cache URL in local state so re-clicks are instant
+      setTasks(prev =>
+        prev.map(t => t.meetingId === task.meetingId ? { ...t, feedbackFormUrl: result.url } : t)
+      );
+      if (selectedTask?.meetingId === task.meetingId) {
+        setSelectedTask(prev => prev ? { ...prev, feedbackFormUrl: result.url } : prev);
+      }
+
+      toast({ title: 'Feedback Form Opened', description: 'The button will disappear only after you submit.' });
+      window.open(result.url, '_blank', 'noopener,noreferrer');
+      setIsDialogOpen(false);
+      setTimeout(() => fetchMeetingRequests(), 1500);
+    } finally {
+      setFeedbackLoading(prev => ({ ...prev, [task.meetingId]: false }));
     }
-  
-    // Cache URL in local state so re-clicks are instant
-    setTasks(prev =>
-      prev.map(t => t.meetingId === target.meetingId ? { ...t, feedbackFormUrl: result.url } : t)
-    );
-    if (selectedTask?.meetingId === target.meetingId) {
-      setSelectedTask(prev => prev ? { ...prev, feedbackFormUrl: result.url } : prev);
-    }
-  
-    toast({ title: 'Feedback Form Opened', description: 'The button will disappear only after you submit.' });
-    window.open(result.url, '_blank', 'noopener,noreferrer');
-    setIsDialogOpen(false);
-    setTimeout(() => fetchMeetingRequests(), 1500);
-  } finally {
-    setFeedbackLoading(prev => ({ ...prev, [target.meetingId]: false }));
-  }
-};
+  };
 
   const openReportDialog = (meeting: TaskItem) => {
     setIsDialogOpen(false);
@@ -782,9 +778,17 @@ export default function MentorTasksPage() {
                     </>
                   ) : selectedTask?.type === 'past_meeting' ? (
                     <>
+                      {/* FIX: use arrow function () => handleOpenFeedbackForm(selectedTask) not handleOpenFeedbackForm(selectedTask) */}
                       {selectedTask.userRole === 'mentee' && !selectedTask.feedbackFormSent && (
-                        <Button onClick={handleOpenFeedbackForm(selectedTask)} disabled={feedbackLoading[selectedTask?.meetingId ?? '']} className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 h-11">
-                          <FileText className="w-4 h-4 mr-2" /> Fill Feedback Form <ExternalLink className="w-3 h-3 ml-2" />
+                        <Button
+                          onClick={() => handleOpenFeedbackForm(selectedTask)}
+                          disabled={feedbackLoading[selectedTask.meetingId]}
+                          className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 h-11"
+                        >
+                          {feedbackLoading[selectedTask.meetingId]
+                            ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Loading...</>
+                            : <><FileText className="w-4 h-4 mr-2" />Fill Feedback Form<ExternalLink className="w-3 h-3 ml-2" /></>
+                          }
                         </Button>
                       )}
                       <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="flex-1 h-11">Close</Button>
@@ -796,8 +800,16 @@ export default function MentorTasksPage() {
                     </>
                   ) : selectedTask?.type === 'feedback' ? (
                     <>
-                      <Button onClick={handleOpenFeedbackForm(selectedTask)} disabled={feedbackLoading[selectedTask?.meetingId ?? '']} className="flex-1 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 h-11">
-                        <FileText className="w-4 h-4 mr-2" /> Fill Feedback Form <ExternalLink className="w-3 h-3 ml-2" />
+                      {/* FIX: use arrow function () => handleOpenFeedbackForm(selectedTask) not handleOpenFeedbackForm(selectedTask) */}
+                      <Button
+                        onClick={() => handleOpenFeedbackForm(selectedTask)}
+                        disabled={feedbackLoading[selectedTask.meetingId]}
+                        className="flex-1 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 h-11"
+                      >
+                        {feedbackLoading[selectedTask.meetingId]
+                          ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Loading...</>
+                          : <><FileText className="w-4 h-4 mr-2" />Fill Feedback Form<ExternalLink className="w-3 h-3 ml-2" /></>
+                        }
                       </Button>
                       <Button variant="outline" onClick={() => setIsDialogOpen(false)} className="flex-1 h-11">Close</Button>
                     </>
