@@ -363,21 +363,102 @@ export async function sendEmail({
       `
         <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.userName || 'there'}</strong>,</p>
         <p style="font-size: 16px; margin: 0 0 24px 0;">Thank you for signing up! Use this 4-digit code to complete your registration:</p>
-        
+
         <div style="background: linear-gradient(135deg, #fef3c7 0%, #fef08a 100%); padding: 32px; border-radius: 8px; margin: 30px 0; text-align: center; border-left: 4px solid #f59e0b;">
           <p style="margin: 0 0 12px 0; color: #92400e; font-size: 13px; font-weight: 600; letter-spacing: 1px;">VERIFICATION CODE</p>
           <p style="margin: 0; color: #1f2937; font-size: 36px; font-weight: 700; letter-spacing: 6px; font-family: 'Courier New', 'Monaco', monospace;">
             ${data.verificationCode}
           </p>
         </div>
-        
+
         <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 20px 0;">
           <p style="margin: 0; font-size: 14px; color: #6b7280;">⏱️ This code will expire in <strong>${data.expiresIn || '10 minutes'}</strong>. Do not share this code with anyone.</p>
         </div>
-        
+
         <p style="font-size: 14px; color: #6b7280; margin: 24px 0;">Once verified, you'll be able to access all features of the CONNEXT platform and start connecting with mentors or mentees!</p>
       `,
       `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.<br/>Questions? <a href="mailto:support@connext.com" style="color: #f59e0b; text-decoration: none;">Contact Support</a></p>`
+    ),
+
+    'meeting-reminder-mentee': (data) => getEmailWrapper(
+      `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">⏰ Meeting Tomorrow!</h2>`,
+      `
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.menteeName || 'there'}</strong>,</p>
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Just a friendly reminder — your mentorship session with <strong>${data.mentorName}</strong> is scheduled for <strong>tomorrow</strong>.</p>
+
+        <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #3b82f6;">
+          <h3 style="margin: 0 0 16px 0; color: #1d4ed8; font-size: 16px;">📅 Session Details:</h3>
+          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName}</p>
+          ${data.googleMeetUrl ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Meeting Link:</strong> <a href="${data.googleMeetUrl}" style="color: #3b82f6; text-decoration: none; font-weight: 600;">Join Meeting</a></p>` : ''}
+        </div>
+
+        <p style="font-size: 14px; color: #6b7280; margin-top: 24px;">Prepare your questions and join a few minutes early. We look forward to your session!</p>
+      `,
+      `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
+    ),
+
+    'meeting-reminder-mentor': (data) => getEmailWrapper(
+      `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">⏰ Session Reminder for Tomorrow</h2>`,
+      `
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.mentorName || 'there'}</strong>,</p>
+        <p style="font-size: 16px; margin: 0 0 24px 0;">This is a reminder that you have a mentorship session with <strong>${data.menteeName}</strong> scheduled for <strong>tomorrow</strong>.</p>
+
+        <div style="background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #10b981;">
+          <h3 style="margin: 0 0 16px 0; color: #065f46; font-size: 16px;">📅 Session Details:</h3>
+          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Mentee:</strong> ${data.menteeName}</p>
+          ${data.googleMeetUrl ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Meeting Link:</strong> <a href="${data.googleMeetUrl}" style="color: #10b981; text-decoration: none; font-weight: 600;">Join Meeting</a></p>` : ''}
+        </div>
+
+        <p style="font-size: 14px; color: #6b7280; margin-top: 24px;">Be ready and join a few minutes early. Your mentee is looking forward to the session!</p>
+      `,
+      `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
+    ),
+
+    'mentor-acceptance-reminder': (data) => getEmailWrapper(
+      `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">🔔 Action Required: Pending Meeting Request</h2>`,
+      `
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.mentorName || 'there'}</strong>,</p>
+        <p style="font-size: 16px; margin: 0 0 24px 0;">You have a pending meeting request from <strong>${data.menteeName}</strong> that requires your response. The meeting is scheduled in approximately <strong>5 days</strong>.</p>
+
+        <div style="background: linear-gradient(135deg, #fef3c7 0%, #fef08a 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #f59e0b;">
+          <h3 style="margin: 0 0 16px 0; color: #92400e; font-size: 16px;">📅 Pending Request Details:</h3>
+          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Mentee:</strong> ${data.menteeName}</p>
+        </div>
+
+        <div style="background: #fee2e2; padding: 16px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ef4444;">
+          <p style="margin: 0; font-size: 14px; color: #991b1b;">
+            <strong>⚠️ Deadline Reminder:</strong> You must accept or decline this request at least <strong>3 days before</strong> the scheduled meeting date. If no response is received by then, the request will be automatically cancelled and the mentee's token will be refunded.
+          </p>
+        </div>
+
+        <p style="font-size: 14px; color: #6b7280; margin-top: 24px;">Please log in to your dashboard to accept or decline this request as soon as possible.</p>
+      `,
+      `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
+    ),
+
+    'meeting-cancelled-no-acceptance': (data) => getEmailWrapper(
+      `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">❌ Meeting Request Cancelled</h2>`,
+      `
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.menteeName || 'there'}</strong>,</p>
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Unfortunately, your meeting request with <strong>${data.mentorName}</strong> has been <strong>automatically cancelled</strong> because the mentor did not respond within the required timeframe.</p>
+
+        <div style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #ef4444;">
+          <h3 style="margin: 0 0 16px 0; color: #991b1b; font-size: 16px;">📅 Cancelled Request Details:</h3>
+          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName}</p>
+          <p style="margin: 12px 0 0 0; color: #374151;"><strong>Reason:</strong> Mentor did not accept the request within the 3-day deadline.</p>
+        </div>
+
+        <p style="font-size: 14px; color: #6b7280; margin-top: 24px;">💰 Your token has been automatically refunded. You can use it to request a session with another mentor or choose a different time slot.</p>
+      `,
+      `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
     ),
   };
 

@@ -695,6 +695,24 @@ export async function PATCH(req: NextRequest) {
     const meeting = mentor.scheduling[meetingIndex];
     const menteeId = meeting.menteeUID;
 
+    // Enforce 3-day acceptance deadline: mentor can only accept up to 3 days before the meeting
+    if (decision === 'accepted') {
+      const meetingDateTime = parseMeetingDateTimeInMalaysia(meeting.date, meeting.time);
+      if (meetingDateTime) {
+        const daysUntilMeeting = (meetingDateTime.getTime() - new Date().getTime()) / (24 * 60 * 60 * 1000);
+        if (daysUntilMeeting < 3) {
+          return NextResponse.json(
+            {
+              message:
+                'The acceptance deadline has passed. Meetings can only be accepted at least 3 days before the scheduled time.',
+              error: 'ACCEPTANCE_DEADLINE_PASSED',
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     // Update target mentor's meeting
     mentor.scheduling[meetingIndex].decision = decision;
     mentor.scheduling[meetingIndex].scheduled_status = decision === 'accepted' ? 'upcoming' : 'rejected';

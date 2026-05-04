@@ -83,13 +83,23 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
     return <>{children}</>;
   }
 
-  const tokenCycleStatus = user?.token_cycle?.status;
-  const pendingReplenishText =
-    tokenCycleStatus === 'pending'
-      ? (user?.tokenReplenishAt
-          ? new Date(user.tokenReplenishAt).toLocaleString()
-          : 'soon')
-      : null;
+  const tokenCycle = user?.token_cycle;
+  const tokenCycleStatus = tokenCycle?.status;
+
+  // Compute cycle display info from token_cycle data
+  let daysRemainingInCycle: number | null = null;
+  let feedbackNeeded = false;
+
+  if (tokenCycleStatus === 'pending' && tokenCycle) {
+    const now = new Date();
+    const tokenUsedAt = tokenCycle.tokenUsedAt ? new Date(tokenCycle.tokenUsedAt) : null;
+    if (tokenUsedAt && !Number.isNaN(tokenUsedAt.getTime())) {
+      const cooldownEnd = new Date(tokenUsedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const msRemaining = cooldownEnd.getTime() - now.getTime();
+      daysRemainingInCycle = Math.max(0, Math.ceil(msRemaining / (24 * 60 * 60 * 1000)));
+    }
+    feedbackNeeded = !tokenCycle.feedbackSubmittedAt || !tokenCycle.feedbackValid;
+  }
 
   return (
     <div className="min-h-screen flex w-full bg-gradient-to-br from-white via-yellow-50/30 to-amber-50/40">
@@ -196,15 +206,26 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
                       <span className="font-extrabold text-lg tracking-tight drop-shadow-sm">{user.tokens ?? 0}</span>
                       <span className="text-base font-bold text-amber-700">Tokens</span>
                       {tokenCycleStatus === 'pending' && (
-                        <span className="mt-1 text-[11px] font-medium text-amber-700 text-center">
-                          Cycle pending until {pendingReplenishText}
-                        </span>
+                        <div className="mt-1 w-full space-y-1">
+                          {daysRemainingInCycle !== null && (
+                            <span className="text-[11px] font-medium text-amber-700 text-center block">
+                              Replenishes in {daysRemainingInCycle} day{daysRemainingInCycle !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                          {feedbackNeeded && (
+                            <span className="text-[11px] font-semibold text-orange-600 text-center block">
+                              Fill feedback form to recover token
+                            </span>
+                          )}
+                        </div>
                       )}
                     </div>
                     {/* Tooltip */}
-                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-max px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
+                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
                       {tokenCycleStatus === 'pending'
-                        ? `Active cycle pending. Evaluates at ${pendingReplenishText}.`
+                        ? feedbackNeeded
+                          ? `Active cycle: Submit your feedback form to unlock token replenishment. ${daysRemainingInCycle != null ? `${daysRemainingInCycle} day(s) remaining.` : ''}`
+                          : `Active cycle: Token replenishes in ${daysRemainingInCycle ?? '?'} day(s).`
                         : 'This token is for requesting meetings'}
                     </div>
                   </div>
@@ -227,9 +248,11 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
                       <span className="text-base font-bold text-amber-700">Tokens</span>
                     </div>
                     {/* Tooltip */}
-                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-max px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
+                    <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 w-52 px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
                       {tokenCycleStatus === 'pending'
-                        ? `Active cycle pending. Evaluates at ${pendingReplenishText}.`
+                        ? feedbackNeeded
+                          ? `Active cycle: Submit your feedback form to unlock token replenishment. ${daysRemainingInCycle != null ? `${daysRemainingInCycle} day(s) remaining.` : ''}`
+                          : `Active cycle: Token replenishes in ${daysRemainingInCycle ?? '?'} day(s).`
                         : 'This token is for requesting meetings'}
                     </div>
                   </div>
