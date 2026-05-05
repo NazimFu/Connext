@@ -9,6 +9,10 @@
       "schedule": "5 0 * * *"
     },
     {
+      "path": "/api/cron/send-meeting-reminders",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/meetings/send-feedback",
       "schedule": "* * * * *"
     }

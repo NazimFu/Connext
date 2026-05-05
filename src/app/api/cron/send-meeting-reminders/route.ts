@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { sendEmail } from '@/lib/email';
 import { clampToken } from '@/lib/token-cycle';
-import { fromZonedTime } from 'date-fns-tz';
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 
 const MY_TIMEZONE = 'Asia/Kuala_Lumpur';
 
@@ -11,9 +11,9 @@ const ACCEPTANCE_DEADLINE_DAYS = 3;
 const ACCEPTANCE_REMINDER_DAYS = 5;
 const MEETING_REMINDER_DAYS = 1;
 
-// Generous upper bounds for reminder windows (handles cron timing variance)
-const ACCEPTANCE_REMINDER_UPPER_DAYS = 5.5;
-const MEETING_REMINDER_UPPER_DAYS = 1.2;
+// Allow a small catch-up window so the cron can hit the reminder minute
+const ACCEPTANCE_REMINDER_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const MEETING_REMINDER_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 function parseMeetingDateTimeMY(date: string, time: string): Date | null {
   try {
@@ -42,7 +42,7 @@ function parseMeetingDateTimeMY(date: string, time: string): Date | null {
 }
 
 async function refundTokenToRequester(
-  menteeId: string,
+  requesterIdentifier: string,
   meetingId: string,
   mentorContainer: any,
   menteeContainer: any
@@ -50,27 +50,49 @@ async function refundTokenToRequester(
   let requester: any = null;
   let isRequesterMentor = false;
 
+  // 1) Try direct mentee document id lookup first
   try {
-    const { resource } = await menteeContainer.item(menteeId, menteeId).read();
+    const { resource } = await menteeContainer.item(requesterIdentifier, requesterIdentifier).read();
     if (resource) {
       requester = resource;
     }
   } catch (err: any) {
-    if (err.code === 404) {
-      const { resources } = await mentorContainer.items
-        .query({
-          query: 'SELECT * FROM c WHERE c.mentee_id = @menteeId',
-          parameters: [{ name: '@menteeId', value: menteeId }],
-        })
-        .fetchAll();
-      if (resources.length > 0) {
-        requester = resources[0];
-        isRequesterMentor = true;
-      }
+    // Continue to fallback queries below.
+  }
+
+  // 2) Fallback: mentee by id / menteeUID / mentee_uid
+  if (!requester) {
+    const { resources: menteeMatches } = await menteeContainer.items
+      .query({
+        query: 'SELECT * FROM c WHERE c.id = @id OR c.menteeUID = @id OR c.mentee_uid = @id',
+        parameters: [{ name: '@id', value: requesterIdentifier }],
+      })
+      .fetchAll();
+
+    if (menteeMatches.length > 0) {
+      requester = menteeMatches[0];
     }
   }
 
-  if (!requester) return;
+  // 3) Fallback: mentor acting as mentee by id / mentorUID / mentee_id
+  if (!requester) {
+    const { resources: mentorMatches } = await mentorContainer.items
+      .query({
+        query: 'SELECT * FROM c WHERE c.id = @id OR c.mentorUID = @id OR c.mentee_id = @id',
+        parameters: [{ name: '@id', value: requesterIdentifier }],
+      })
+      .fetchAll();
+
+    if (mentorMatches.length > 0) {
+      requester = mentorMatches[0];
+      isRequesterMentor = true;
+    }
+  }
+
+  if (!requester) {
+    console.warn(`⚠️ Could not resolve requester for token refund. identifier=${requesterIdentifier}, meetingId=${meetingId}`);
+    return;
+  }
 
   // Update meeting status on requester side
   if (requester.scheduling && Array.isArray(requester.scheduling)) {
@@ -83,6 +105,7 @@ async function refundTokenToRequester(
   }
 
   // Refund token
+  const before = clampToken(requester.tokens);
   requester.tokens = 1;
   if (requester.token_cycle?.meetingId === meetingId && requester.token_cycle.status === 'pending') {
     requester.token_cycle = undefined;
@@ -93,6 +116,10 @@ async function refundTokenToRequester(
   } else {
     await menteeContainer.item(requester.id, requester.id).replace(requester);
   }
+
+  console.log(
+    `💰 Token refund applied to ${isRequesterMentor ? 'mentor' : 'mentee'} ${requester.id} (identifier=${requesterIdentifier}) ${before} -> ${requester.tokens}`
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -100,6 +127,20 @@ export async function GET(req: NextRequest) {
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  const { searchParams } = new URL(req.url);
+  const targetMeetingId = searchParams.get('meetingId');
+  const forceReminder = searchParams.get('forceReminder') === 'true';
+
+  console.log('===== CRON TEST =====');
+  console.log('NODE_ENV:', process.env.NODE_ENV);
+  console.log('API_URL:', process.env.API_URL);
+  console.log('targetMeetingId:', targetMeetingId);
+  console.log('forceReminder:', forceReminder);
+  console.log('COSMOS endpoint exists:', !!process.env.COSMOS_DB_ENDPOINT);
+  console.log('COSMOS key exists:', !!process.env.COSMOS_DB_KEY);
+  console.log('Database:', process.env.COSMOS_DB_DATABASE_ID);
+  console.log('Container:', process.env.COSMOS_DB_CONTAINER_ID);
 
   const now = new Date();
   const mentorContainer = database.container('mentor');
@@ -109,19 +150,34 @@ export async function GET(req: NextRequest) {
   let acceptanceRemindersSent = 0;
   let autoCancelledCount = 0;
   const errors: string[] = [];
+  const processedMeetingReminderIds = new Set<string>();
 
   const { resources: allMentors } = await mentorContainer.items
     .query({ query: 'SELECT * FROM c WHERE c.scheduling != null' })
     .fetchAll();
+
+  const meetings = allMentors.flatMap((mentor) =>
+    Array.isArray(mentor.scheduling) ? mentor.scheduling : []
+  );
+  console.log('Total meetings found from DB:', meetings.length);
 
   for (const mentor of allMentors) {
     if (!mentor.scheduling || !Array.isArray(mentor.scheduling)) continue;
 
     let hasChanges = false;
     const autoCancelledMeetings: any[] = [];
+    let foundTargetMeeting = false;
 
     for (let i = 0; i < mentor.scheduling.length; i++) {
       const meeting = mentor.scheduling[i];
+
+      if (targetMeetingId && meeting.meetingId !== targetMeetingId) {
+        continue;
+      }
+
+      if (targetMeetingId) {
+        foundTargetMeeting = true;
+      }
 
       // Skip already resolved meetings
       const status = String(meeting.scheduled_status || '').toLowerCase();
@@ -132,6 +188,21 @@ export async function GET(req: NextRequest) {
 
       const msUntilMeeting = meetingDateTime.getTime() - now.getTime();
       const daysUntilMeeting = msUntilMeeting / (24 * 60 * 60 * 1000);
+
+      console.log('Checking meeting:', {
+        meetingId: meeting.meetingId,
+        menteeUID: meeting.menteeUID,
+        mentorUID: meeting.mentorUID,
+        date: meeting.date,
+        time: meeting.time,
+        decision: meeting.decision,
+        scheduled_status: meeting.scheduled_status,
+        report_status: meeting.report_status,
+        acceptanceReminderSentAt: meeting.acceptanceReminderSentAt,
+        reminderSentAt: meeting.reminderSentAt,
+        feedbackSentAt: meeting.feedbackSentAt,
+        daysUntilMeeting,
+      });
 
       // Meeting is already past — skip (cleanup-expired-meetings handles these)
       if (daysUntilMeeting <= 0) continue;
@@ -159,11 +230,13 @@ export async function GET(req: NextRequest) {
       }
 
       // ─── Feature 3: Acceptance reminder to mentor ~5 days before ───
+      const acceptanceReminderTargetMs = meetingDateTime.getTime() - ACCEPTANCE_REMINDER_DAYS * 24 * 60 * 60 * 1000;
       if (
         meeting.decision === 'pending' &&
         daysUntilMeeting > ACCEPTANCE_DEADLINE_DAYS &&
-        daysUntilMeeting <= ACCEPTANCE_REMINDER_UPPER_DAYS &&
-        !meeting.acceptanceReminderSentAt
+        now.getTime() >= acceptanceReminderTargetMs &&
+        now.getTime() < acceptanceReminderTargetMs + ACCEPTANCE_REMINDER_WINDOW_MS &&
+        (forceReminder || !meeting.acceptanceReminderSentAt)
       ) {
         try {
           await sendEmail({
@@ -186,15 +259,22 @@ export async function GET(req: NextRequest) {
           errors.push(msg);
           console.error(msg);
         }
+        if (foundTargetMeeting) {
+          break;
+        }
         continue;
       }
 
-      // ─── Feature 2: 1-day reminder for both parties (accepted meetings) ───
+      // ─── Feature 2: 1-day reminder (accepted meetings) ───
+      const meetingReminderTargetMs = meetingDateTime.getTime() - MEETING_REMINDER_DAYS * 24 * 60 * 60 * 1000;
       if (
         meeting.decision === 'accepted' &&
         meeting.scheduled_status === 'upcoming' &&
-        daysUntilMeeting <= MEETING_REMINDER_UPPER_DAYS &&
-        !meeting.reminderSentAt
+        daysUntilMeeting > 0 &&
+        now.getTime() >= meetingReminderTargetMs &&
+        now.getTime() < meetingReminderTargetMs + MEETING_REMINDER_WINDOW_MS &&
+        !meeting.reminderSentAt &&
+        !processedMeetingReminderIds.has(meeting.meetingId)
       ) {
         let reminderOk = false;
         try {
@@ -225,6 +305,7 @@ export async function GET(req: NextRequest) {
           });
 
           reminderOk = true;
+          processedMeetingReminderIds.add(meeting.meetingId);
           meetingRemindersSent++;
           console.log(`📧 1-day reminders sent for meeting ${meeting.meetingId}`);
         } catch (err) {
@@ -243,6 +324,10 @@ export async function GET(req: NextRequest) {
     // Persist mentor changes
     if (hasChanges) {
       await mentorContainer.item(mentor.id, mentor.id).replace(mentor);
+    }
+
+    if (foundTargetMeeting) {
+      break;
     }
 
     // Handle auto-cancelled meetings: refund tokens + notify mentees
