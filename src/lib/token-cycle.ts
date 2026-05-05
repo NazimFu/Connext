@@ -14,8 +14,12 @@ export type TokenCycle = {
   evaluatedAt: string | null;
 };
 
-// Request window: 1 week before to 30 days before meeting
-const REQUEST_WINDOW_MIN_WEEKS = 1;
+// The timezone all meeting dates/times are stored in
+const MEETING_STORAGE_TZ = 'Asia/Kuala_Lumpur';
+
+// Request window: meeting date must be at least 7 days away and at most 30 days away
+// Both bounds are compared as calendar dates in Malaysia time.
+const REQUEST_WINDOW_MIN_DAYS = 7;
 const REQUEST_WINDOW_MAX_DAYS = 30;
 
 // Feedback form: visible 2 hours after meeting time
@@ -24,17 +28,9 @@ const FEEDBACK_UNLOCK_HOURS = 2;
 // Token replenishment: 30-day cooldown after token usage
 const REPLENISHMENT_COOLDOWN_DAYS = 30;
 
-// Token cycle evaluation uses the same 1-month cooldown rule as replenishment.
-
 /**
- * Converts a stored meeting date/time (assumed to be in a reference timezone) 
+ * Converts a stored meeting date/time (assumed to be in a reference timezone)
  * to display format in the user's timezone.
- * 
- * @param dateStr - Stored date in YYYY-MM-DD format
- * @param timeStr - Stored time in HH:MM or HH:MM AM/PM format
- * @param referenceTimezone - Timezone the meeting date/time was recorded in (e.g., mentee's timezone)
- * @param displayTimezone - User's timezone to display the time in
- * @returns { displayDate, displayTime } in the user's timezone, or null if parsing fails
  */
 export const getDisplayMeetingDateTime = (
   dateStr: string,
@@ -43,19 +39,14 @@ export const getDisplayMeetingDateTime = (
   displayTimezone: string
 ): { displayDate: string; displayTime: string } | null => {
   try {
-    // First convert to UTC using reference timezone
     const utcDateTime = getMeetingDateTime(dateStr, timeStr, referenceTimezone);
     if (!utcDateTime) {
       return null;
     }
 
-    // Then convert to display timezone
     const displayDateTime = toZonedTime(utcDateTime, displayTimezone);
-
-    // Format back to YYYY-MM-DD and HH:MM
     const displayDate = formatTz(displayDateTime, 'yyyy-MM-dd', { timeZone: displayTimezone });
-    
-    // Check if input was in 12-hour format
+
     const is12Hour = timeStr.includes('AM') || timeStr.includes('PM');
     const displayTime = is12Hour
       ? formatTz(displayDateTime, 'hh:mm a', { timeZone: displayTimezone })
@@ -73,11 +64,8 @@ export const getDisplayMeetingDateTime = (
 };
 
 /**
- * Parses a date string (YYYY-MM-DD format) and time string into a Date object in the user's timezone.
+ * Parses a date string (YYYY-MM-DD format) and time string into a Date object in the given timezone.
  * Supports both 12-hour (HH:MM AM/PM) and 24-hour (HH:MM) formats.
- * @param dateStr - Date in YYYY-MM-DD format
- * @param timeStr - Time in HH:MM or HH:MM AM/PM format
- * @param timezone - IANA timezone (e.g., "Asia/Kuala_Lumpur", "America/New_York")
  * @returns Date object in UTC, or null if parsing fails
  */
 export const getMeetingDateTime = (
@@ -94,7 +82,6 @@ export const getMeetingDateTime = (
     let hours = 0;
     let minutes = 0;
 
-    // Parse time format (supports both 12-hour and 24-hour)
     if (timeStr.includes('AM') || timeStr.includes('PM')) {
       const [rawTime, period] = timeStr.split(' ');
       const [hoursRaw, minutesRaw] = rawTime.split(':').map(Number);
@@ -111,11 +98,9 @@ export const getMeetingDateTime = (
       minutes = minutesRaw || 0;
     }
 
-    // Create local time in user's timezone
     const zonedDate = toZonedTime(meetingDate, timezone);
     zonedDate.setHours(hours, minutes, 0, 0);
 
-    // Convert back to UTC
     const utcDate = fromZonedTime(zonedDate, timezone);
     return utcDate;
   } catch (error) {
@@ -125,35 +110,73 @@ export const getMeetingDateTime = (
 };
 
 /**
- * Checks if a request is within the valid request window.
- * Valid window: 1 week before to 30 days before meeting
- * @returns { allowed: boolean; reason: string } or { allowed: boolean; reason?: string } if allowed
+ * Checks if a meeting date is within the valid request window.
+ *
+ * The window is evaluated purely on CALENDAR DATES in Malaysia time:
+ *   - Meeting date must be >= today (MY) + 7 days
+ *   - Meeting date must be <= today (MY) + 30 days
+ *
+ * The meeting time is deliberately ignored — users pick a date on a calendar,
+ * and dates on that calendar always refer to Malaysia dates (the storage TZ).
+ * The caller's timezone parameter is accepted for API compatibility but is not
+ * used in the window calculation so that users in different timezones get the
+ * same allowed date range.
+ *
+ * @param meetingDate  "YYYY-MM-DD" — the Malaysia calendar date the user picked
+ * @param meetingTime  ignored for the window check
+ * @param _timezone    kept for API compatibility, not used here
+ * @param nowUtc       current UTC time (defaults to new Date())
  */
 export const isWithinRequestWindow = (
   meetingDate: string,
   meetingTime: string,
-  timezone: string,
+  _timezone: string,
   nowUtc: Date = new Date()
 ): { allowed: boolean; reason?: string } => {
   try {
-    const meetingDateTime = getMeetingDateTime(meetingDate, meetingTime, timezone);
-    if (!meetingDateTime) {
-      return { allowed: false, reason: 'Invalid meeting date/time' };
-    }
-
-    const earliestAllowedRequestAt = subDays(meetingDateTime, REQUEST_WINDOW_MAX_DAYS);
-    const latestAllowedRequestAt = subWeeks(meetingDateTime, REQUEST_WINDOW_MIN_WEEKS);
-
-    console.log(
-      `[Request Window] Now: ${nowUtc.toISOString()}, Meeting: ${meetingDateTime.toISOString()}, EarliestAllowed: ${earliestAllowedRequestAt.toISOString()}, LatestAllowed: ${latestAllowedRequestAt.toISOString()}`
+    // Derive today's calendar date in Malaysia time
+    const nowInMY = toZonedTime(nowUtc, MEETING_STORAGE_TZ);
+    const todayMY = new Date(
+      nowInMY.getFullYear(),
+      nowInMY.getMonth(),
+      nowInMY.getDate()
     );
 
-    if (isBefore(nowUtc, earliestAllowedRequestAt)) {
-      return { allowed: false, reason: 'Meeting is more than 30 days away' };
+    // Parse the meeting date — treat it as a plain calendar date (no TZ shift)
+    const parsed = parseISO(meetingDate);
+    if (Number.isNaN(parsed.getTime())) {
+      return { allowed: false, reason: 'Invalid meeting date' };
+    }
+    const meetingDayMY = new Date(
+      parsed.getFullYear(),
+      parsed.getMonth(),
+      parsed.getDate()
+    );
+
+    // Earliest allowed: today (MY) + 7 calendar days
+    const earliestAllowed = new Date(todayMY);
+    earliestAllowed.setDate(todayMY.getDate() + REQUEST_WINDOW_MIN_DAYS);
+
+    // Latest allowed: today (MY) + 30 calendar days
+    const latestAllowed = new Date(todayMY);
+    latestAllowed.setDate(todayMY.getDate() + REQUEST_WINDOW_MAX_DAYS);
+
+    console.log(
+      `[Request Window] TodayMY: ${todayMY.toDateString()}, MeetingMY: ${meetingDayMY.toDateString()}, Earliest: ${earliestAllowed.toDateString()}, Latest: ${latestAllowed.toDateString()}`
+    );
+
+    if (meetingDayMY < earliestAllowed) {
+      return {
+        allowed: false,
+        reason: `Meeting date must be at least ${REQUEST_WINDOW_MIN_DAYS} days from today (Malaysia time)`,
+      };
     }
 
-    if (isAfter(nowUtc, latestAllowedRequestAt)) {
-      return { allowed: false, reason: 'Meeting is less than 1 week away' };
+    if (meetingDayMY > latestAllowed) {
+      return {
+        allowed: false,
+        reason: `Meeting date must be within ${REQUEST_WINDOW_MAX_DAYS} days from today (Malaysia time)`,
+      };
     }
 
     return { allowed: true };
@@ -163,13 +186,28 @@ export const isWithinRequestWindow = (
   }
 };
 
+/**
+ * Returns the earliest and latest selectable dates for the calendar UI.
+ * Both bounds are derived from today's date in Malaysia time so the calendar
+ * always shows the same allowed range regardless of the user's local timezone.
+ */
 export const getRequestWindowBounds = (nowUtc: Date = new Date()) => {
-  const earliestMeetingDate = startOfDay(addDays(nowUtc, 7));
-  const latestMeetingDate = endOfDay(addDays(nowUtc, REQUEST_WINDOW_MAX_DAYS));
-  return {
-    earliestMeetingDate,
-    latestMeetingDate,
-  };
+  const nowInMY = toZonedTime(nowUtc, MEETING_STORAGE_TZ);
+  const todayMY = new Date(
+    nowInMY.getFullYear(),
+    nowInMY.getMonth(),
+    nowInMY.getDate()
+  );
+
+  const earliestMeetingDate = new Date(todayMY);
+  earliestMeetingDate.setDate(todayMY.getDate() + REQUEST_WINDOW_MIN_DAYS);
+
+  const latestMeetingDate = new Date(todayMY);
+  latestMeetingDate.setDate(todayMY.getDate() + REQUEST_WINDOW_MAX_DAYS);
+  // Allow selection through the end of the last allowed day
+  latestMeetingDate.setHours(23, 59, 59, 999);
+
+  return { earliestMeetingDate, latestMeetingDate };
 };
 
 export const isDateWithinRequestWindow = (meetingDate: Date, nowUtc: Date = new Date()): boolean => {
@@ -179,10 +217,7 @@ export const isDateWithinRequestWindow = (meetingDate: Date, nowUtc: Date = new 
 
 /**
  * Checks if the feedback form should be visible to the user.
- * Form is visible 2 hours after meeting time.
- * @param tokenCycle - The token cycle record
- * @param timezone - User's timezone
- * @param nowUtc - Current time in UTC
+ * Form is visible 2 hours after meeting time (meeting stored in Malaysia TZ).
  */
 export const canShowFeedbackForm = (
   tokenCycle: TokenCycle | null | undefined,
@@ -194,10 +229,14 @@ export const canShowFeedbackForm = (
   }
 
   if (tokenCycle.feedbackSubmittedAt && tokenCycle.feedbackValid) {
-    return false; // Already submitted valid feedback
+    return false;
   }
 
-  const meetingDateTime = getMeetingDateTime(tokenCycle.meetingDate, tokenCycle.meetingTime, timezone);
+  const meetingDateTime = getMeetingDateTime(
+    tokenCycle.meetingDate,
+    tokenCycle.meetingTime,
+    MEETING_STORAGE_TZ
+  );
   if (!meetingDateTime) {
     return false;
   }
@@ -205,17 +244,16 @@ export const canShowFeedbackForm = (
   const feedbackUnlockTime = new Date(meetingDateTime.getTime() + FEEDBACK_UNLOCK_HOURS * 60 * 60 * 1000);
   const canShow = isAfter(nowUtc, feedbackUnlockTime);
 
-  console.log(`[Feedback Form Visibility] Meeting: ${meetingDateTime.toISOString()}, Unlock: ${feedbackUnlockTime.toISOString()}, Now: ${nowUtc.toISOString()}, Can show: ${canShow}`);
+  console.log(
+    `[Feedback Form Visibility] Meeting: ${meetingDateTime.toISOString()}, Unlock: ${feedbackUnlockTime.toISOString()}, Now: ${nowUtc.toISOString()}, Can show: ${canShow}`
+  );
 
   return canShow;
 };
 
 /**
  * Checks if feedback submission should be accepted based on timing.
- * Feedback is only valid if submitted at least 2 hours after meeting time.
- * @param tokenCycle - The token cycle record
- * @param timezone - User's timezone
- * @param nowUtc - Current time in UTC (submission time)
+ * Feedback is only valid if submitted at least 2 hours after meeting time (Malaysia TZ).
  */
 export const canAcceptFeedbackSubmission = (
   tokenCycle: TokenCycle | null | undefined,
@@ -226,30 +264,37 @@ export const canAcceptFeedbackSubmission = (
     return { accepted: false, reason: 'Invalid token cycle status' };
   }
 
-  const meetingDateTime = getMeetingDateTime(tokenCycle.meetingDate, tokenCycle.meetingTime, timezone);
+  const meetingDateTime = getMeetingDateTime(
+    tokenCycle.meetingDate,
+    tokenCycle.meetingTime,
+    MEETING_STORAGE_TZ
+  );
   if (!meetingDateTime) {
     return { accepted: false, reason: 'Invalid meeting date/time' };
   }
 
   const feedbackUnlockTime = new Date(meetingDateTime.getTime() + FEEDBACK_UNLOCK_HOURS * 60 * 60 * 1000);
 
-  console.log(`[Feedback Acceptance Check] Meeting: ${meetingDateTime.toISOString()}, Unlock: ${feedbackUnlockTime.toISOString()}, Submission: ${nowUtc.toISOString()}`);
+  console.log(
+    `[Feedback Acceptance Check] Meeting: ${meetingDateTime.toISOString()}, Unlock: ${feedbackUnlockTime.toISOString()}, Submission: ${nowUtc.toISOString()}`
+  );
 
   if (isBefore(nowUtc, feedbackUnlockTime)) {
     const minutesEarly = Math.ceil((feedbackUnlockTime.getTime() - nowUtc.getTime()) / (60 * 1000));
-    return { accepted: false, reason: `Feedback is not yet available. Try again in ${minutesEarly} minutes.` };
+    return {
+      accepted: false,
+      reason: `Feedback is not yet available. Try again in ${minutesEarly} minutes.`,
+    };
   }
 
   return { accepted: true };
 };
 
 /**
- * Checks if a token can be replenished for a user.
- * Token can be replenished when BOTH conditions are true:
- * 1. 30 days have passed from tokenUsedAt
+ * Checks if a token can be replenished.
+ * Both conditions must be true:
+ * 1. 30 days have passed since tokenUsedAt
  * 2. feedbackSubmittedAt exists and feedbackValid is true
- * @param tokenCycle - The token cycle record
- * @param nowUtc - Current time in UTC
  */
 export const canReplenishToken = (
   tokenCycle: TokenCycle | null | undefined,
@@ -267,7 +312,6 @@ export const canReplenishToken = (
     return { canReplenish: false, reason: 'Token cycle forfeited' };
   }
 
-  // Check if 30 days have passed since token usage
   const tokenUsedAt = parseISO(tokenCycle.tokenUsedAt);
   if (Number.isNaN(tokenUsedAt.getTime())) {
     return { canReplenish: false, reason: 'Invalid tokenUsedAt timestamp' };
@@ -276,13 +320,16 @@ export const canReplenishToken = (
   const cooldownEnd = addDays(tokenUsedAt, REPLENISHMENT_COOLDOWN_DAYS);
   const cooldownPassed = isAfter(nowUtc, cooldownEnd) || nowUtc.getTime() === cooldownEnd.getTime();
 
-  console.log(`[Token Replenishment Check] TokenUsedAt: ${tokenUsedAt.toISOString()}, Cooldown ends: ${cooldownEnd.toISOString()}, Now: ${nowUtc.toISOString()}, Cooldown passed: ${cooldownPassed}`);
+  console.log(
+    `[Token Replenishment Check] TokenUsedAt: ${tokenUsedAt.toISOString()}, Cooldown ends: ${cooldownEnd.toISOString()}, Now: ${nowUtc.toISOString()}, Cooldown passed: ${cooldownPassed}`
+  );
 
-  // Check if feedback has been submitted and is valid
   const feedbackSubmitted = !!tokenCycle.feedbackSubmittedAt;
   const feedbackValid = tokenCycle.feedbackValid === true;
 
-  console.log(`[Token Replenishment Check] Feedback submitted: ${feedbackSubmitted}, Feedback valid: ${feedbackValid}`);
+  console.log(
+    `[Token Replenishment Check] Feedback submitted: ${feedbackSubmitted}, Feedback valid: ${feedbackValid}`
+  );
 
   if (!feedbackSubmitted) {
     return { canReplenish: false, reason: 'Waiting for feedback submission' };
@@ -303,7 +350,6 @@ export const canReplenishToken = (
 
 /**
  * Gets the current replenishment state for UI display.
- * Returns what the user should see while waiting for token replenishment.
  */
 export const getTokenReplenishState = (
   tokenCycle: TokenCycle | null | undefined,
@@ -323,8 +369,11 @@ export const getTokenReplenishState = (
   const feedbackValid = tokenCycle.feedbackValid === true;
 
   if (!feedbackSubmitted || !feedbackValid) {
-    // Check if feedback form is even available
-    const meetingDateTime = getMeetingDateTime(tokenCycle.meetingDate, tokenCycle.meetingTime, timezone);
+    const meetingDateTime = getMeetingDateTime(
+      tokenCycle.meetingDate,
+      tokenCycle.meetingTime,
+      MEETING_STORAGE_TZ
+    );
     if (meetingDateTime) {
       const feedbackUnlockTime = new Date(meetingDateTime.getTime() + FEEDBACK_UNLOCK_HOURS * 60 * 60 * 1000);
       if (isBefore(nowUtc, feedbackUnlockTime)) {
@@ -336,10 +385,12 @@ export const getTokenReplenishState = (
         };
       }
     }
-    return { status: 'waiting_for_feedback', message: 'Please submit the feedback form to replenish your token' };
+    return {
+      status: 'waiting_for_feedback',
+      message: 'Please submit the feedback form to replenish your token',
+    };
   }
 
-  // Feedback is submitted, check cooldown
   const tokenUsedAt = parseISO(tokenCycle.tokenUsedAt);
   if (Number.isNaN(tokenUsedAt.getTime())) {
     return { status: 'waiting_for_cooldown', message: 'Processing token replenishment' };
@@ -363,10 +414,6 @@ export const getTokenReplenishState = (
 
 /**
  * Replenishes a token if all conditions are met.
- * This should be called by cron jobs or on-demand replenishment endpoints.
- * @param menteeDoc - The mentee document from Cosmos DB
- * @param nowUtc - Current time in UTC
- * @returns { replenished: boolean; reason?: string; tokensAfter?: number }
  */
 export const replenishTokenIfEligible = (
   menteeDoc: any,
@@ -382,19 +429,19 @@ export const replenishTokenIfEligible = (
     return { replenished: false, reason: checkResult.reason };
   }
 
-  // Perform replenishment
   const tokensBefore = clampToken(menteeDoc.tokens);
-  menteeDoc.tokens = Math.min(tokensBefore + 1, 1); // Max 1 token
+  menteeDoc.tokens = Math.min(tokensBefore + 1, 1);
   menteeDoc.token_cycle.status = 'replenished';
   menteeDoc.token_cycle.evaluatedAt = nowUtc.toISOString();
 
-  // Only mark as replenished if tokens actually changed
   if (menteeDoc.tokens === tokensBefore) {
     console.log(`[Token Replenishment] Token count did not change (safety check): ${tokensBefore}`);
     return { replenished: false, reason: 'Tokens did not increment (safety check)', tokensAfter: menteeDoc.tokens };
   }
 
-  console.log(`[Token Replenishment] Token replenished. Before: ${tokensBefore}, After: ${menteeDoc.tokens}, EvaluatedAt: ${nowUtc.toISOString()}`);
+  console.log(
+    `[Token Replenishment] Token replenished. Before: ${tokensBefore}, After: ${menteeDoc.tokens}, EvaluatedAt: ${nowUtc.toISOString()}`
+  );
   return { replenished: true, tokensAfter: menteeDoc.tokens };
 };
 
@@ -467,8 +514,7 @@ export const evaluateTokenCycleForUser = (user: any, now: Date = new Date()) => 
     return { changed: false, evaluated: false, replenished: false };
   }
 
-  // Legacy safety: older records could store future meeting time as tokenUsedAt.
-  // Normalize to current time so requesters are not blocked indefinitely.
+  // Legacy safety: older records could store a future time as tokenUsedAt
   if (tokenUsedAt > now) {
     user.token_cycle.tokenUsedAt = now.toISOString();
     user.tokens = clampToken(user.tokens);

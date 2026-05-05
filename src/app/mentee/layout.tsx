@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useState, useTransition, useEffect, useCallback, useRef } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
@@ -44,15 +44,112 @@ const navigationItems = [
 const pagesWithoutSidebar = [
   '/mentee/forms',
   '/mentee/verification',
-  '/mentee/verification-pending', // Add this
+  '/mentee/verification-pending',
 ];
 
 export default function MenteeLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isPending, startTransition] = useTransition();
+
+  // Debounced window click → refresh user so the sidebar always shows
+  // up-to-date token count, feedback status, etc.
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const handleWindowClick = () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(() => {
+        refreshUser();
+      }, 300);
+    };
+    window.addEventListener('click', handleWindowClick);
+    return () => {
+      window.removeEventListener('click', handleWindowClick);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
+  }, [refreshUser]);
+
+  // Track whether the meeting associated with the current token cycle has started
+  // and whether feedback has been submitted
+  const [meetingStarted, setMeetingStarted] = useState(false);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+
+  // Check if the meeting from the active token cycle has started (2+ hours ago)
+  // and whether feedback has been submitted
+  const checkMeetingAndFeedbackStatus = useCallback(async () => {
+    if (!user?.id) return;
+
+    const tokenCycle = user?.token_cycle;
+    if (!tokenCycle || tokenCycle.status !== 'pending') {
+      setMeetingStarted(false);
+      setFeedbackSubmitted(false);
+      return;
+    }
+
+    // Check if feedback already submitted in token cycle
+    if (tokenCycle.feedbackSubmittedAt && tokenCycle.feedbackValid) {
+      setFeedbackSubmitted(true);
+      setMeetingStarted(true);
+      return;
+    }
+
+    // Determine if meeting has started based on meetingDate + meetingTime
+    if (tokenCycle.meetingDate && tokenCycle.meetingTime) {
+      try {
+        // Parse the meeting date/time (stored in Malaysia time)
+        const { convertMeetingTime } = await import('@/lib/timezone');
+        const { utcDate } = convertMeetingTime(
+          tokenCycle.meetingDate,
+          tokenCycle.meetingTime,
+          'Asia/Kuala_Lumpur'
+        );
+        const now = new Date();
+        const twoHoursAfterMeeting = new Date(utcDate.getTime() + 2 * 60 * 60 * 1000);
+        const hasStarted = now >= twoHoursAfterMeeting;
+        setMeetingStarted(hasStarted);
+
+        if (hasStarted) {
+          // Also check from the server if feedback was submitted
+          // (the user object might be stale)
+          try {
+            const ts = Date.now();
+            const res = await fetch(`/api/token-cycle/status?userId=${user.id}&_t=${ts}`, {
+              cache: 'no-store',
+              headers: { 'Cache-Control': 'no-cache' }
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const cycle = data.tokenCycle;
+              const submitted = !!(cycle?.feedbackSubmittedAt && cycle?.feedbackValid);
+              setFeedbackSubmitted(submitted);
+            }
+          } catch {
+            // fallback: use token_cycle from user object
+            setFeedbackSubmitted(
+              !!(tokenCycle.feedbackSubmittedAt && tokenCycle.feedbackValid)
+            );
+          }
+        } else {
+          setFeedbackSubmitted(false);
+        }
+      } catch {
+        setMeetingStarted(false);
+        setFeedbackSubmitted(false);
+      }
+    } else {
+      setMeetingStarted(false);
+      setFeedbackSubmitted(false);
+    }
+  }, [user?.id, user?.token_cycle]);
+
+  useEffect(() => {
+    checkMeetingAndFeedbackStatus();
+    // Re-check every minute so the sidebar updates when the meeting time passes
+    const interval = setInterval(checkMeetingAndFeedbackStatus, 60 * 1000);
+    return () => clearInterval(interval);
+  }, [checkMeetingAndFeedbackStatus]);
 
   // Check if current page should hide sidebar
   const shouldHideSidebar = pagesWithoutSidebar.some(path => pathname.startsWith(path));
@@ -60,11 +157,9 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
   const handleLogout = async () => {
     try {
       await logout();
-      // Force navigation to home page after logout
       window.location.href = '/';
     } catch (error) {
       console.error('Logout error:', error);
-      // Still redirect even if there's an error
       window.location.href = '/';
     }
   };
@@ -89,7 +184,6 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
 
   // Compute cycle display info from token_cycle data
   let daysRemainingInCycle: number | null = null;
-  let feedbackNeeded = false;
 
   if (tokenCycleStatus === 'pending' && tokenCycle) {
     const now = new Date();
@@ -99,8 +193,16 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
       const msRemaining = cooldownEnd.getTime() - now.getTime();
       daysRemainingInCycle = Math.max(0, Math.ceil(msRemaining / (24 * 60 * 60 * 1000)));
     }
-    feedbackNeeded = !tokenCycle.feedbackSubmittedAt || !tokenCycle.feedbackValid;
   }
+
+  // Only show the feedback nudge when:
+  // 1. There is a pending token cycle
+  // 2. The meeting has started (>= 2 hours after meeting time)
+  // 3. Feedback has NOT yet been submitted
+  const showFeedbackNudge =
+    tokenCycleStatus === 'pending' &&
+    meetingStarted &&
+    !feedbackSubmitted;
 
   return (
     <div className="min-h-screen flex w-full bg-gradient-to-br from-white via-yellow-50/30 to-amber-50/40">
@@ -159,7 +261,10 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
                 <Link
                   href={item.url}
                   prefetch={true}
-                  onClick={() => startTransition(() => {})}
+                  onClick={() => {
+                    startTransition(() => {});
+                    refreshUser();
+                  }}
                   className={cn(
                     'w-full flex items-center gap-3 px-2 md:px-4 py-3 rounded-xl transition-all duration-200 group',
                     isActive(item.url)
@@ -211,7 +316,8 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
                               Replenishes in {daysRemainingInCycle} day{daysRemainingInCycle !== 1 ? 's' : ''}
                             </span>
                           )}
-                          {feedbackNeeded && (
+                          {/* Only show feedback nudge when meeting has started AND feedback not yet submitted */}
+                          {showFeedbackNudge && (
                             <span className="text-[11px] font-semibold text-orange-600 text-center block">
                               Fill feedback form to recover token
                             </span>
@@ -222,7 +328,7 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
                     {/* Tooltip */}
                     <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
                       {tokenCycleStatus === 'pending'
-                        ? feedbackNeeded
+                        ? showFeedbackNudge
                           ? `Active cycle: Submit your feedback form to unlock token replenishment. ${daysRemainingInCycle != null ? `${daysRemainingInCycle} day(s) remaining.` : ''}`
                           : `Active cycle: Token replenishes in ${daysRemainingInCycle ?? '?'} day(s).`
                         : 'This token is for meeting requests'}
@@ -249,7 +355,7 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
                     {/* Tooltip */}
                     <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 w-52 px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
                       {tokenCycleStatus === 'pending'
-                        ? feedbackNeeded
+                        ? showFeedbackNudge
                           ? `Active cycle: Submit your feedback form to unlock token replenishment. ${daysRemainingInCycle != null ? `${daysRemainingInCycle} day(s) remaining.` : ''}`
                           : `Active cycle: Token replenishes in ${daysRemainingInCycle ?? '?'} day(s).`
                         : 'This token is for meeting requests'}

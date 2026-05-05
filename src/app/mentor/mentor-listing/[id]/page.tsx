@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, AlertCircle } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRequireAuth } from "@/hooks/use-auth";
-import { format, addDays, getDay } from "date-fns";
+import { format, getDay } from "date-fns";
 import {
   Dialog,
   DialogContent,
@@ -72,7 +72,7 @@ export default function MentorDetailPage() {
   const [mentor, setMentor] = useState<Mentor | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [date, setDate] = useState<Date | undefined>(new Date());
-  const [time, setTime] = useState<string | undefined>(); // This stores Malaysia time (e.g. "09:00")
+  const [time, setTime] = useState<string | undefined>(); // Malaysia time HH:mm
   const [message, setMessage] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
@@ -82,14 +82,11 @@ export default function MentorDetailPage() {
 
   const isSubmittedRef = useRef(false);
 
-  // Use the proper getUserTimezone from lib (respects user profile later)
   const userTz = getUserTimezone(user as any);
   const isNonDefaultTz = userTz !== MY_TZ;
 
-  // Memoized data
   const mentorData = useMemo(() => {
     if (!mentor) return { name: "", image: "", logos: [] };
-
     const name = mentor.mentor_name || "Mentor";
     const image = mentor.mentor_photo || "";
     const logos = Array.isArray(mentor.institution_photo)
@@ -97,13 +94,11 @@ export default function MentorDetailPage() {
           .map((photo) => (typeof photo === "string" ? { url: photo, name: "Institution" } : photo))
           .filter((photo) => photo.url?.trim())
       : [];
-
     return { name, image, logos };
   }, [mentor]);
 
   const availableDays = useMemo(() => {
     if (!mentor?.available_slots || !Array.isArray(mentor.available_slots)) return new Set<string>();
-
     const days = new Set<string>();
     mentor.available_slots.forEach((slot: any) => {
       if (slot?.day && Array.isArray(slot.time) && slot.time.some((t: string) => t?.trim())) {
@@ -141,50 +136,63 @@ export default function MentorDetailPage() {
   }, [mentor?.id]);
 
   const availableTimesForDay = useMemo(() => {
-  if (!mentor || !date) return [];
+    if (!mentor || !date) return [];
 
-  const weekday = WEEKDAYS[getDay(date)];
-  const slot = mentor.available_slots?.find(
-    (s: any) => s?.day?.toLowerCase() === weekday.toLowerCase()
+    const weekday = WEEKDAYS[getDay(date)];
+    const slot = mentor.available_slots?.find(
+      (s: any) => s?.day?.toLowerCase() === weekday.toLowerCase()
+    );
+    if (!slot?.time || !Array.isArray(slot.time)) return [];
+
+    const seen = new Set<string>();
+    const result: Array<{ myTime: string; displayTime: string; booked: boolean }> = [];
+    const dateStr = format(date, "yyyy-MM-dd");
+
+    for (const myTime of slot.time) {
+      if (!myTime?.trim()) continue;
+
+      const converted = convertMeetingTime(dateStr, myTime, userTz);
+
+      // Hide slots that shift to a different calendar day in the user's timezone
+      const userDateStr = format(converted.utcDate, "yyyy-MM-dd");
+      if (userDateStr !== dateStr && isNonDefaultTz) continue;
+
+      const key = `${myTime}-${converted.displayTime}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      result.push({
+        myTime,
+        displayTime: converted.displayTime,
+        booked: bookedSlots.includes(myTime),
+      });
+    }
+
+    return result
+      .filter((s) => !s.booked)
+      .sort((a, b) => a.myTime.localeCompare(b.myTime));
+  }, [mentor, date, userTz, bookedSlots, isNonDefaultTz]);
+
+  // Compute date bounds once — dates must be >= 7 days from now and <= 30 days from now
+  const { earliestMeetingDate, latestMeetingDate } = useMemo(
+    () => getRequestWindowBounds(new Date()),
+    []
   );
-  if (!slot?.time || !Array.isArray(slot.time)) return [];
 
-  const seen = new Set<string>();
-  const result: Array<{ myTime: string; displayTime: string; booked: boolean }> = [];
-  const dateStr = format(date, "yyyy-MM-dd");
+  // Disable function for Calendar — dates outside the [+7d, +30d] window are not selectable
+  const isDateDisabled = useCallback(
+    (day: Date) => {
+      return day < earliestMeetingDate || day > latestMeetingDate;
+    },
+    [earliestMeetingDate, latestMeetingDate]
+  );
 
-  for (const myTime of slot.time) {
-    if (!myTime?.trim()) continue;
-
-    const converted = convertMeetingTime(dateStr, myTime, userTz);
-
-    // Hide slots that shift to a different calendar day in the user's timezone
-    const userDateStr = format(converted.utcDate, "yyyy-MM-dd");  // ← use utcDate, not dateShifted
-    if (userDateStr !== dateStr && isNonDefaultTz) continue;
-
-    const key = `${myTime}-${converted.displayTime}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-
-    result.push({
-      myTime,                          // Malaysia time — sent to backend
-      displayTime: converted.displayTime, // User's local time — shown in UI
-      booked: bookedSlots.includes(myTime),
-    });
-  }
-
-  return result
-    .filter((s) => !s.booked)
-    .sort((a, b) => a.myTime.localeCompare(b.myTime));
-}, [mentor, date, userTz, bookedSlots, isNonDefaultTz]);
-
-  const calendarModifiers = useMemo(() => {
-    const { earliestMeetingDate, latestMeetingDate } = getRequestWindowBounds(new Date());
-    return {
-      disabled: (day: Date) => day < earliestMeetingDate || day > latestMeetingDate,
-      available: (day: Date) => availableDays.has(WEEKDAYS[getDay(day)].toLowerCase()),
-    };
-  }, [availableDays]);
+  const calendarModifiers = useMemo(() => ({
+    available: (day: Date) =>
+      day >= earliestMeetingDate &&
+      day <= latestMeetingDate &&
+      availableDays.has(WEEKDAYS[getDay(day)].toLowerCase()),
+  }), [availableDays, earliestMeetingDate, latestMeetingDate]);
 
   const fetchMentor = useCallback(async () => {
     if (!params?.id) return;
@@ -217,7 +225,6 @@ export default function MentorDetailPage() {
     return () => clearInterval(interval);
   }, [date, mentor, fetchBookedSlots]);
 
-  // Simplified handleSubmit - no manual conversion needed!
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmittedRef.current || isSubmitting) return;
@@ -395,9 +402,16 @@ export default function MentorDetailPage() {
                     mode="single"
                     selected={date}
                     onSelect={setDate}
+                    // Use the `disabled` prop directly — the correct way to prevent
+                    // selection of out-of-window dates in shadcn Calendar.
+                    disabled={isDateDisabled}
                     modifiers={calendarModifiers}
                     modifiersStyles={{
-                      available: { backgroundColor: "rgb(34 197 94 / 0.1)", color: "rgb(22 101 52)", fontWeight: "600" },
+                      available: {
+                        backgroundColor: "rgb(34 197 94 / 0.1)",
+                        color: "rgb(22 101 52)",
+                        fontWeight: "600",
+                      },
                     }}
                   />
                   <div className="mt-3 text-xs text-gray-500">Your timezone: {userTz}</div>
@@ -504,10 +518,7 @@ export default function MentorDetailPage() {
       </Dialog>
 
       {/* Slot Taken Dialog */}
-      <Dialog
-        open={showSlotTakenDialog}
-        onOpenChange={setShowSlotTakenDialog}
-      >
+      <Dialog open={showSlotTakenDialog} onOpenChange={setShowSlotTakenDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
