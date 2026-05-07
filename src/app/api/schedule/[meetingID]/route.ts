@@ -436,7 +436,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ m
               menteeName: meeting.mentee_name,
               date: meeting.date,
               time: meeting.time,
-              timezone: meeting.mentor_timezone || mentorDoc.timezone || MY_TIMEZONE,
+              timezone: mentorDoc.timezone || meeting.mentor_timezone || MY_TIMEZONE,
               reason: reason,
               isForMentor: true
             }

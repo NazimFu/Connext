@@ -321,7 +321,7 @@ export async function GET(req: NextRequest) {
         (forceReminder || !meeting.acceptanceReminderSentAt)
       ) {
         try {
-          const mentorTimezone = meeting.mentor_timezone || mentor.timezone || MY_TIMEZONE;
+          const mentorTimezone = mentor.timezone || meeting.mentor_timezone || MY_TIMEZONE;
           console.log(`✉️ Sending acceptance reminder to ${meeting.mentor_email}...`);
           await sendEmail({
             to: meeting.mentor_email,
@@ -333,6 +333,7 @@ export async function GET(req: NextRequest) {
               date: meeting.date,
               time: meeting.time,
               timezone: mentorTimezone,
+              message: meeting.message || '',
             },
           });
           mentor.scheduling[i].acceptanceReminderSentAt = now.toISOString();
@@ -365,7 +366,7 @@ export async function GET(req: NextRequest) {
         try {
           const menteeTimezone = meeting.mentee_timezone || timezoneCache.get(meeting.menteeUID) || await resolveUserTimezone(meeting.menteeUID, menteeContainer, mentorContainer);
           timezoneCache.set(meeting.menteeUID, menteeTimezone);
-          const mentorTimezone = meeting.mentor_timezone || mentor.timezone || MY_TIMEZONE;
+          const mentorTimezone = mentor.timezone || meeting.mentor_timezone || MY_TIMEZONE;
           await sendEmail({
             to: meeting.mentee_email,
             subject: 'Reminder: Your Mentorship Session is Tomorrow – CONNEXT',
@@ -376,6 +377,7 @@ export async function GET(req: NextRequest) {
               date: meeting.date,
               time: meeting.time,
               timezone: menteeTimezone,
+              message: meeting.message || '',
               googleMeetUrl: meeting.googleMeetUrl || meeting.meetingLink || '',
             },
           });
@@ -390,6 +392,7 @@ export async function GET(req: NextRequest) {
               date: meeting.date,
               time: meeting.time,
               timezone: mentorTimezone,
+              message: meeting.message || '',
               googleMeetUrl: meeting.googleMeetUrl || meeting.meetingLink || '',
             },
           });

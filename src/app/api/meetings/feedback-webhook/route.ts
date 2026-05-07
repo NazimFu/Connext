@@ -341,7 +341,7 @@ export async function POST(request: NextRequest) {
         menteeName: meeting.mentee_name || 'A mentee',
         date: meeting.date,
         time: meeting.time,
-        timezone: meeting.mentor_timezone || mentorDoc.timezone || 'Asia/Kuala_Lumpur',
+        timezone: mentorDoc.timezone || meeting.mentor_timezone || 'Asia/Kuala_Lumpur',
         submittedAt: canonicalFeedbackRecord.submittedAt,
         responses: canonicalFeedbackRecord.responses,
       },

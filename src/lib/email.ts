@@ -424,6 +424,7 @@ export async function sendEmail({
           <h3 style="margin: 0 0 16px 0; color: #1d4ed8; font-size: 16px;">📅 Session Details:</h3>
           ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName}</p>
+          ${data.message ? `<div style="margin: 12px 0 0 0; padding: 14px; background: rgba(255,255,255,0.7); border-radius: 6px; color: #374151;"><strong>Message:</strong><br/>${escapeHtml(data.message)}</div>` : ''}
           ${data.googleMeetUrl ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Meeting Link:</strong> <a href="${data.googleMeetUrl}" style="color: #3b82f6; text-decoration: none; font-weight: 600;">Join Meeting</a></p>` : ''}
         </div>
 
@@ -442,6 +443,7 @@ export async function sendEmail({
           <h3 style="margin: 0 0 16px 0; color: #065f46; font-size: 16px;">📅 Session Details:</h3>
           ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentee:</strong> ${data.menteeName}</p>
+          ${data.message ? `<div style="margin: 12px 0 0 0; padding: 14px; background: rgba(255,255,255,0.7); border-radius: 6px; color: #374151;"><strong>Message:</strong><br/>${escapeHtml(data.message)}</div>` : ''}
           ${data.googleMeetUrl ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Meeting Link:</strong> <a href="${data.googleMeetUrl}" style="color: #10b981; text-decoration: none; font-weight: 600;">Join Meeting</a></p>` : ''}
         </div>
 
@@ -460,6 +462,7 @@ export async function sendEmail({
           <h3 style="margin: 0 0 16px 0; color: #92400e; font-size: 16px;">📅 Pending Request Details:</h3>
           ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentee:</strong> ${data.menteeName}</p>
+          ${data.message ? `<div style="margin: 12px 0 0 0; padding: 14px; background: rgba(255,255,255,0.7); border-radius: 6px; color: #374151;"><strong>Message:</strong><br/>${escapeHtml(data.message)}</div>` : ''}
         </div>
 
         <div style="background: #fee2e2; padding: 16px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ef4444;">
