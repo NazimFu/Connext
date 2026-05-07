@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useTransition, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useTransition, useEffect, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
@@ -53,23 +53,6 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
   const { user, logout, refreshUser } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isPending, startTransition] = useTransition();
-
-  // Debounced window click → refresh user so the sidebar always shows
-  // up-to-date token count, feedback status, etc.
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    const handleWindowClick = () => {
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-      refreshTimerRef.current = setTimeout(() => {
-        refreshUser();
-      }, 300);
-    };
-    window.addEventListener('click', handleWindowClick);
-    return () => {
-      window.removeEventListener('click', handleWindowClick);
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    };
-  }, [refreshUser]);
 
   // Track whether the meeting associated with the current token cycle has started
   // and whether feedback has been submitted

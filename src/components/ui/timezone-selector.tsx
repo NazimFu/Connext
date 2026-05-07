@@ -7,7 +7,16 @@
 
 import { TIMEZONE_OPTIONS, DEFAULT_TIMEZONE, type TimezoneOption } from '@/lib/timezone';
 import { Label } from '@/components/ui/label';
-import { Globe } from 'lucide-react';
+import { Globe, Check, ChevronDown } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface TimezoneSelectorProps {
   value: string;
@@ -55,26 +64,28 @@ export function TimezoneSelector({
         <Globe className="h-4 w-4" />
         {label}
       </Label>
-      <select
-        value={currentValue}
-        onChange={e => onChange(e.target.value)}
-        disabled={disabled}
-        className="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-yellow-400/30 focus:border-yellow-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {REGION_ORDER.map(region => {
-          const opts = grouped.get(region);
-          if (!opts?.length) return null;
-          return (
-            <optgroup key={region} label={region}>
-              {opts.map(opt => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label} — {opt.offset}
-                </option>
-              ))}
-            </optgroup>
-          );
-        })}
-      </select>
+      <Select value={currentValue} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger className="w-full border border-gray-300 bg-white px-3 py-2.5 text-sm shadow-none focus:ring-2 focus:ring-yellow-400/30 focus:border-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed">
+          <SelectValue placeholder="Choose a timezone" />
+        </SelectTrigger>
+        <SelectContent className="max-h-96">
+          {REGION_ORDER.map(region => {
+            const opts = grouped.get(region);
+            if (!opts?.length) return null;
+
+            return (
+              <SelectGroup key={region}>
+                <SelectLabel>{region}</SelectLabel>
+                {opts.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label} — {opt.offset}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            );
+          })}
+        </SelectContent>
+      </Select>
       {isMalaysia ? (
         <p className="text-xs text-gray-500">
           Default: Malaysia Standard Time (UTC+8). Meeting times are stored in MYT.

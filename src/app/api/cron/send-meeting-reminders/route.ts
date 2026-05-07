@@ -11,8 +11,8 @@ const ACCEPTANCE_DEADLINE_DAYS = 3;
 const ACCEPTANCE_REMINDER_DAYS = 5;
 const MEETING_REMINDER_DAYS = 1;
 
-// Allow a small catch-up window so the cron can hit the reminder minute
-const ACCEPTANCE_REMINDER_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+// Allow a broad catch-up window so a missed cron run still catches the reminder.
+const ACCEPTANCE_REMINDER_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
 const MEETING_REMINDER_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 function parseMeetingDateTimeMY(date: string, time: string): Date | null {
@@ -122,6 +122,51 @@ async function refundTokenToRequester(
   );
 }
 
+async function resolveUserTimezone(
+  userId: string | undefined,
+  menteeContainer: any,
+  mentorContainer: any
+): Promise<string> {
+  if (!userId) {
+    return MY_TIMEZONE;
+  }
+
+  try {
+    const { resource: mentee } = await menteeContainer.item(userId, userId).read();
+    if (mentee?.timezone) {
+      return mentee.timezone;
+    }
+  } catch {
+    // fall through to mentor lookup
+  }
+
+  try {
+    const { resource: mentor } = await mentorContainer.item(userId, userId).read();
+    if (mentor?.timezone) {
+      return mentor.timezone;
+    }
+  } catch {
+    // fall through to query-based lookup
+  }
+
+  try {
+    const { resources: mentors } = await mentorContainer.items
+      .query({
+        query: 'SELECT * FROM c WHERE c.id = @id OR c.mentorUID = @id OR c.mentee_id = @id',
+        parameters: [{ name: '@id', value: userId }],
+      })
+      .fetchAll();
+    const matchMentor = mentors.find((mentor: any) => mentor?.timezone);
+    if (matchMentor?.timezone) {
+      return matchMentor.timezone;
+    }
+  } catch {
+    // ignore and fall back
+  }
+
+  return MY_TIMEZONE;
+}
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -145,6 +190,7 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   const mentorContainer = database.container('mentor');
   const menteeContainer = database.container('mentee');
+  const timezoneCache = new Map<string, string>();
 
   let meetingRemindersSent = 0;
   let acceptanceRemindersSent = 0;
@@ -170,6 +216,7 @@ export async function GET(req: NextRequest) {
 
     for (let i = 0; i < mentor.scheduling.length; i++) {
       const meeting = mentor.scheduling[i];
+      const mentorDocUid = (mentor as any).mentorUID || mentor.id;
 
       if (targetMeetingId && meeting.meetingId !== targetMeetingId) {
         continue;
@@ -181,7 +228,19 @@ export async function GET(req: NextRequest) {
 
       // Skip already resolved meetings
       const status = String(meeting.scheduled_status || '').toLowerCase();
-      if (status === 'cancelled' || status === 'canceled' || status === 'past') continue;
+      if (status === 'cancelled' || status === 'canceled' || status === 'past') {
+        console.log(`⏭️ Skipping meeting ${meeting.meetingId} - status: ${status}`);
+        continue;
+      }
+      
+      console.log(`📋 Processing meeting ${meeting.meetingId} - status: ${status}, decision: ${meeting.decision}`);
+
+      // Only process the owning mentor document to avoid duplicate sends when a mentor
+      // books another mentor and the same meeting exists in both mentor documents.
+      if (meeting.mentorUID && mentorDocUid !== meeting.mentorUID) {
+        console.log(`⏭️ Skipping non-owner doc ${mentorDocUid} for meeting ${meeting.meetingId} (owner: ${meeting.mentorUID})`);
+        continue;
+      }
 
       const meetingDateTime = parseMeetingDateTimeMY(meeting.date, meeting.time);
       if (!meetingDateTime) continue;
@@ -231,6 +290,29 @@ export async function GET(req: NextRequest) {
 
       // ─── Feature 3: Acceptance reminder to mentor ~5 days before ───
       const acceptanceReminderTargetMs = meetingDateTime.getTime() - ACCEPTANCE_REMINDER_DAYS * 24 * 60 * 60 * 1000;
+      
+      // Log all condition checks for acceptance reminder
+      const acceptanceConditions = {
+        decision_is_pending: meeting.decision === 'pending',
+        days_until_meeting_gt_deadline: daysUntilMeeting > ACCEPTANCE_DEADLINE_DAYS,
+        now_gte_target: now.getTime() >= acceptanceReminderTargetMs,
+        now_lt_target_plus_window: now.getTime() < acceptanceReminderTargetMs + ACCEPTANCE_REMINDER_WINDOW_MS,
+        force_or_not_sent: forceReminder || !meeting.acceptanceReminderSentAt,
+      };
+      
+      console.log(`🔍 Checking acceptance reminder for ${meeting.meetingId}:`, {
+        decision: meeting.decision,
+        daysUntilMeeting,
+        ACCEPTANCE_DEADLINE_DAYS,
+        acceptanceReminderTargetMs: new Date(acceptanceReminderTargetMs).toISOString(),
+        now: now.toISOString(),
+        nowMs: now.getTime(),
+        window_end: new Date(acceptanceReminderTargetMs + ACCEPTANCE_REMINDER_WINDOW_MS).toISOString(),
+        acceptanceReminderSentAt: meeting.acceptanceReminderSentAt,
+        conditions: acceptanceConditions,
+        all_pass: Object.values(acceptanceConditions).every(v => v),
+      });
+      
       if (
         meeting.decision === 'pending' &&
         daysUntilMeeting > ACCEPTANCE_DEADLINE_DAYS &&
@@ -239,6 +321,8 @@ export async function GET(req: NextRequest) {
         (forceReminder || !meeting.acceptanceReminderSentAt)
       ) {
         try {
+          const mentorTimezone = meeting.mentor_timezone || mentor.timezone || MY_TIMEZONE;
+          console.log(`✉️ Sending acceptance reminder to ${meeting.mentor_email}...`);
           await sendEmail({
             to: meeting.mentor_email,
             subject: 'Action Required: Please Accept or Decline a Meeting Request – CONNEXT',
@@ -248,6 +332,7 @@ export async function GET(req: NextRequest) {
               menteeName: meeting.mentee_name,
               date: meeting.date,
               time: meeting.time,
+              timezone: mentorTimezone,
             },
           });
           mentor.scheduling[i].acceptanceReminderSentAt = now.toISOString();
@@ -278,6 +363,9 @@ export async function GET(req: NextRequest) {
       ) {
         let reminderOk = false;
         try {
+          const menteeTimezone = meeting.mentee_timezone || timezoneCache.get(meeting.menteeUID) || await resolveUserTimezone(meeting.menteeUID, menteeContainer, mentorContainer);
+          timezoneCache.set(meeting.menteeUID, menteeTimezone);
+          const mentorTimezone = meeting.mentor_timezone || mentor.timezone || MY_TIMEZONE;
           await sendEmail({
             to: meeting.mentee_email,
             subject: 'Reminder: Your Mentorship Session is Tomorrow – CONNEXT',
@@ -287,6 +375,7 @@ export async function GET(req: NextRequest) {
               mentorName: meeting.mentor_name,
               date: meeting.date,
               time: meeting.time,
+              timezone: menteeTimezone,
               googleMeetUrl: meeting.googleMeetUrl || meeting.meetingLink || '',
             },
           });
@@ -300,6 +389,7 @@ export async function GET(req: NextRequest) {
               menteeName: meeting.mentee_name,
               date: meeting.date,
               time: meeting.time,
+              timezone: mentorTimezone,
               googleMeetUrl: meeting.googleMeetUrl || meeting.meetingLink || '',
             },
           });
@@ -342,6 +432,8 @@ export async function GET(req: NextRequest) {
       }
 
       try {
+        const menteeTimezone = cancelled.mentee_timezone || timezoneCache.get(cancelled.menteeUID) || await resolveUserTimezone(cancelled.menteeUID, menteeContainer, mentorContainer);
+        timezoneCache.set(cancelled.menteeUID, menteeTimezone);
         await sendEmail({
           to: cancelled.mentee_email,
           subject: 'Meeting Request Automatically Cancelled – CONNEXT',
@@ -351,6 +443,7 @@ export async function GET(req: NextRequest) {
             mentorName: cancelled.mentor_name,
             date: cancelled.date,
             time: cancelled.time,
+            timezone: menteeTimezone,
           },
         });
         console.log(`📧 Auto-cancel notification sent to ${cancelled.mentee_email}`);

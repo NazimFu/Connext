@@ -27,6 +27,8 @@ export type Scheduling = {
   mentee_name?: string;
   mentor_email?: string;
   mentee_email?: string;
+  mentor_timezone?: string;
+  mentee_timezone?: string;
 
   // Optional fields with default null/none values in the database
   feedback_form?: MeetingFeedbackRecord | null;

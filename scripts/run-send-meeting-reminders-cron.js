@@ -14,38 +14,64 @@ const config = {
   intervalMs: Number(process.env.LOCAL_CRON_INTERVAL_MS) || 60 * 1000, // default 1 minute
 };
 
-function callReminders() {
-  const url = `${config.apiUrl}/api/cron/send-meeting-reminders`;
-  const protocol = url.startsWith('https') ? https : http;
+const candidateApiUrls = Array.from(new Set([
+  config.apiUrl,
+  'http://localhost:9002',
+  'http://localhost:3000',
+]));
 
-  console.log(`[${new Date().toISOString()}] Calling reminders endpoint: ${url}`);
+function requestReminders(url) {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https') ? https : http;
 
-  const options = {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${config.cronSecret}`,
-      'Content-Type': 'application/json',
-    },
-  };
+    console.log(`[${new Date().toISOString()}] Calling reminders endpoint: ${url}`);
 
-  const req = protocol.request(url, options, (res) => {
-    let data = '';
-    res.on('data', (chunk) => (data += chunk));
-    res.on('end', () => {
-      try {
-        const parsed = JSON.parse(data || '{}');
-        console.log(`[${new Date().toISOString()}] Response:`, parsed);
-      } catch (e) {
-        console.log(`[${new Date().toISOString()}] Response (raw):`, data);
-      }
+    const options = {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${config.cronSecret}`,
+        'Content-Type': 'application/json',
+      },
+    };
+
+    const req = protocol.request(url, options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => (data += chunk));
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data || '{}');
+          console.log(`[${new Date().toISOString()}] Response from ${url}:`, parsed);
+          resolve({ ok: true, statusCode: res.statusCode, body: parsed });
+        } catch (e) {
+          console.log(`[${new Date().toISOString()}] Response (raw) from ${url}:`, data);
+          resolve({ ok: true, statusCode: res.statusCode, body: data });
+        }
+      });
     });
-  });
 
-  req.on('error', (err) => {
-    console.error(`[${new Date().toISOString()}] Request error:`, err.message);
-  });
+    req.on('error', (err) => {
+      console.error(`[${new Date().toISOString()}] Request error for ${url}:`, err.message);
+      reject(err);
+    });
 
-  req.end();
+    req.end();
+  });
+}
+
+async function callReminders() {
+  for (const apiUrl of candidateApiUrls) {
+    const url = `${apiUrl}/api/cron/send-meeting-reminders`;
+    try {
+      const result = await requestReminders(url);
+      if (result.ok) {
+        return;
+      }
+    } catch (err) {
+      // Try the next candidate URL.
+    }
+  }
+
+  console.error(`[${new Date().toISOString()}] All reminder endpoint candidates failed:`, candidateApiUrls);
 }
 
 console.log('🚀 Local reminders cron started');

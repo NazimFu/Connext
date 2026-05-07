@@ -415,6 +415,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ m
               menteeName: meeting.mentee_name,
               date: meeting.date,
               time: meeting.time,
+              timezone: meeting.mentee_timezone || requesterDoc.timezone || MY_TIMEZONE,
               reason: reason,
               isForMentee: true,
               tokenAutoRefunded: true
@@ -435,6 +436,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ m
               menteeName: meeting.mentee_name,
               date: meeting.date,
               time: meeting.time,
+              timezone: meeting.mentor_timezone || mentorDoc.timezone || MY_TIMEZONE,
               reason: reason,
               isForMentor: true
             }
@@ -457,6 +459,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ m
               menteeName: meeting.mentee_name,
               date: meeting.date,
               time: meeting.time,
+              timezone: meeting.mentee_timezone || requesterDoc.timezone || MY_TIMEZONE,
               reason: reason,
               isForMentor: false,
               tokenPendingApproval: true

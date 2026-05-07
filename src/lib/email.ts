@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { convertMeetingTime, DEFAULT_TIMEZONE, TIMEZONE_OPTIONS } from '@/lib/timezone';
 
 interface EmailParams {
   to: string;
@@ -72,6 +73,51 @@ const renderFeedbackResponses = (responses: unknown): string => {
   `;
 };
 
+const getTimezoneDisplayLabel = (timezone?: string): string => {
+  if (!timezone || timezone === DEFAULT_TIMEZONE) {
+    return 'MYT';
+  }
+
+  const option = TIMEZONE_OPTIONS.find((item) => item.value === timezone);
+  if (option) {
+    return `${option.label} (${option.offset})`;
+  }
+
+  return timezone;
+};
+
+const renderMeetingTimeDetails = (
+  date: unknown,
+  time: unknown,
+  timezone?: unknown
+): string => {
+  if (typeof date !== 'string' || typeof time !== 'string' || !date || !time) {
+    return '';
+  }
+
+  const recipientTimezone = typeof timezone === 'string' && timezone.trim()
+    ? timezone.trim()
+    : DEFAULT_TIMEZONE;
+
+  try {
+    const mytDisplay = convertMeetingTime(date, time, DEFAULT_TIMEZONE);
+
+    if (recipientTimezone === DEFAULT_TIMEZONE) {
+      return `<p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${escapeHtml(`${mytDisplay.displayDateFull} at ${mytDisplay.displayTime}`)} (MYT)</p>`;
+    }
+
+    const localDisplay = convertMeetingTime(date, time, recipientTimezone);
+    const timezoneLabel = escapeHtml(getTimezoneDisplayLabel(recipientTimezone));
+
+    return `
+      <p style="margin: 8px 0; color: #374151;"><strong>MYT:</strong> ${escapeHtml(`${mytDisplay.displayDateFull} at ${mytDisplay.displayTime}`)}</p>
+      <p style="margin: 8px 0; color: #374151;"><strong>Your time (${timezoneLabel}):</strong> ${escapeHtml(`${localDisplay.displayDateFull} at ${localDisplay.displayTime}`)}</p>
+    `;
+  } catch {
+    return `<p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${escapeHtml(`${date} ${time}`)} (MYT)</p>`;
+  }
+};
+
 export async function sendEmail({
   to,
   subject,
@@ -105,8 +151,7 @@ export async function sendEmail({
         
         <div style="background: linear-gradient(135deg, #fef3c7 0%, #fef08a 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #f59e0b;">
           <h3 style="margin: 0 0 16px 0; color: #92400e; font-size: 16px;">📅 Meeting Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentee:</strong> ${data.menteeName} (${data.menteeEmail})</p>
           ${data.message ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Message:</strong><br/>${data.message}</p>` : ''}
         </div>
@@ -124,8 +169,7 @@ export async function sendEmail({
         
         <div style="background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #10b981;">
           <h3 style="margin: 0 0 16px 0; color: #065f46; font-size: 16px;">📅 Meeting Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName}</p>
           ${data.googleMeetUrl ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Meeting Link:</strong> <a href="${data.googleMeetUrl}" style="color: #10b981; text-decoration: none; font-weight: 600;">Join Meeting</a></p>` : ''}
         </div>
@@ -143,8 +187,7 @@ export async function sendEmail({
         
         <div style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #ef4444;">
           <h3 style="margin: 0 0 16px 0; color: #991b1b; font-size: 16px;">📅 Request Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName}</p>
         </div>
         
@@ -161,8 +204,7 @@ export async function sendEmail({
 
         <div style="background: linear-gradient(135deg, #fef3c7 0%, #fef08a 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #f59e0b;">
           <h3 style="margin: 0 0 16px 0; color: #92400e; font-size: 16px;">📅 Request Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName}</p>
         </div>
 
@@ -179,8 +221,7 @@ export async function sendEmail({
 
         <div style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #ef4444;">
           <h3 style="margin: 0 0 16px 0; color: #991b1b; font-size: 16px;">📅 Meeting Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date || 'N/A'}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time || 'N/A'}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName || 'N/A'}</p>
         </div>
 
@@ -198,8 +239,7 @@ export async function sendEmail({
         <div style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #ef4444;">
           <h3 style="margin: 0 0 16px 0; color: #991b1b; font-size: 16px;">📋 Action Taken:</h3>
           <p style="margin: 8px 0; color: #374151;"><strong>Reason:</strong> ${data.reason || 'Policy violation'}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date || 'N/A'}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time || 'N/A'}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName || 'N/A'}</p>
           ${data.adminNotes ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Admin Notes:</strong> ${data.adminNotes}</p>` : ''}
         </div>
@@ -217,8 +257,7 @@ export async function sendEmail({
         
         <div style="background: linear-gradient(135deg, #fef3c7 0%, #fef08a 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #f59e0b;">
           <h3 style="margin: 0 0 16px 0; color: #92400e; font-size: 16px;">📅 Cancelled Meeting Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentee:</strong> ${data.menteeName}</p>
           ${data.reason ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Reason:</strong> ${data.reason}</p>` : ''}
         </div>
@@ -236,8 +275,7 @@ export async function sendEmail({
         
         <div style="background: linear-gradient(135deg, #e0e7ff 0%, #dbeafe 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #6366f1;">
           <h3 style="margin: 0 0 16px 0; color: #3730a3; font-size: 16px;">📋 Cancellation Request Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName}</p>
           ${data.reason ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Reason:</strong> ${data.reason}</p>` : ''}
         </div>
@@ -255,8 +293,7 @@ export async function sendEmail({
         
         <div style="background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #10b981;">
           <h3 style="margin: 0 0 16px 0; color: #065f46; font-size: 16px;">📅 Meeting Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentee:</strong> ${data.menteeName}</p>
           ${data.googleMeetUrl ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Meeting Link:</strong> <a href="${data.googleMeetUrl}" style="color: #10b981; text-decoration: none; font-weight: 600;">Join Meeting</a></p>` : ''}
         </div>
@@ -274,8 +311,7 @@ export async function sendEmail({
         
         <div style="background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #10b981;">
           <h3 style="margin: 0 0 16px 0; color: #065f46; font-size: 16px;">📅 Meeting Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName}</p>
           ${data.googleMeetUrl ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Meeting Link:</strong> <a href="${data.googleMeetUrl}" style="color: #10b981; text-decoration: none; font-weight: 600;">Join Meeting</a></p>` : ''}
         </div>
@@ -293,8 +329,7 @@ export async function sendEmail({
         
         <div style="background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #8b5cf6;">
           <h3 style="margin: 0 0 16px 0; color: #5b21b6; font-size: 16px;">📅 Session Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName}</p>
         </div>
         
@@ -319,8 +354,7 @@ export async function sendEmail({
 
         <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #2563eb;">
           <h3 style="margin: 0 0 16px 0; color: #1d4ed8; font-size: 16px;">Session Details</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${escapeHtml(data.date || 'N/A')}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${escapeHtml(data.time || 'N/A')}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Submitted:</strong> ${formatIsoForEmail(data.submittedAt)}</p>
         </div>
 
@@ -388,8 +422,7 @@ export async function sendEmail({
 
         <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #3b82f6;">
           <h3 style="margin: 0 0 16px 0; color: #1d4ed8; font-size: 16px;">📅 Session Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName}</p>
           ${data.googleMeetUrl ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Meeting Link:</strong> <a href="${data.googleMeetUrl}" style="color: #3b82f6; text-decoration: none; font-weight: 600;">Join Meeting</a></p>` : ''}
         </div>
@@ -407,8 +440,7 @@ export async function sendEmail({
 
         <div style="background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #10b981;">
           <h3 style="margin: 0 0 16px 0; color: #065f46; font-size: 16px;">📅 Session Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentee:</strong> ${data.menteeName}</p>
           ${data.googleMeetUrl ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Meeting Link:</strong> <a href="${data.googleMeetUrl}" style="color: #10b981; text-decoration: none; font-weight: 600;">Join Meeting</a></p>` : ''}
         </div>
@@ -426,8 +458,7 @@ export async function sendEmail({
 
         <div style="background: linear-gradient(135deg, #fef3c7 0%, #fef08a 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #f59e0b;">
           <h3 style="margin: 0 0 16px 0; color: #92400e; font-size: 16px;">📅 Pending Request Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentee:</strong> ${data.menteeName}</p>
         </div>
 
@@ -450,8 +481,7 @@ export async function sendEmail({
 
         <div style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #ef4444;">
           <h3 style="margin: 0 0 16px 0; color: #991b1b; font-size: 16px;">📅 Cancelled Request Details:</h3>
-          <p style="margin: 8px 0; color: #374151;"><strong>Date:</strong> ${data.date}</p>
-          <p style="margin: 8px 0; color: #374151;"><strong>Time:</strong> ${data.time}</p>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
           <p style="margin: 8px 0; color: #374151;"><strong>Mentor:</strong> ${data.mentorName}</p>
           <p style="margin: 12px 0 0 0; color: #374151;"><strong>Reason:</strong> Mentor did not accept the request within the 3-day deadline.</p>
         </div>

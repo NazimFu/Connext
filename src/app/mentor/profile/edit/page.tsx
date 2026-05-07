@@ -3,7 +3,7 @@
 // src/app/mentor/profile/edit/page.tsx
 
 import React, { useState, useEffect, useRef, KeyboardEvent, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -305,7 +305,6 @@ export default function MentorProfileEditPage() {
 function MentorProfileEdit() {
   const { user, isLoading } = useRequireAuth('mentor');
   const { toast } = useToast();
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [isSaving, setIsSaving] = useState(false);
@@ -498,10 +497,6 @@ function MentorProfileEdit() {
 
     // 2. Dispatch a custom DOM event for same-tab listeners
     window.dispatchEvent(new CustomEvent('timezone-changed', { detail: { timezone: newTz } }));
-
-    // 3. Soft-refresh: router.refresh() tells Next.js to re-fetch Server Components
-    //    without unmounting the current page's client state.
-    router.refresh();
   };
 
   const handleTimezoneChange = (newTz: string) => {

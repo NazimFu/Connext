@@ -491,6 +491,9 @@ export async function POST(req: NextRequest) {
     const tokenUsageAt = createdAt;
     requester.token_cycle = buildFreshTokenCycle(meetingId, date, time, tokenUsageAt);
 
+    const requesterTimezone = requester?.timezone || MY_TIMEZONE;
+    const mentorTimezone = targetMentor.timezone || MY_TIMEZONE;
+
     // **IMPORTANT: Structure the meeting object correctly**
     const newMeeting = {
       meetingId,
@@ -505,8 +508,10 @@ export async function POST(req: NextRequest) {
       cancel_info: null,
       mentee_name: finalMenteeName,       // Name of the requester
       mentee_email: finalMenteeEmail,     // Email of the requester
+      mentee_timezone: requesterTimezone,
       mentor_name: targetMentor.mentor_name,     // Name of target mentor
       mentor_email: targetMentor.mentor_email,   // Email of target mentor
+      mentor_timezone: mentorTimezone,
       message: message || "",
       created_at: createdAt,
       googleMeetUrl: "",
@@ -611,6 +616,7 @@ export async function POST(req: NextRequest) {
           menteeEmail: finalMenteeEmail,
           date,
           time,
+          timezone: mentorTimezone,
           message: message || ''
         }
       });
@@ -863,6 +869,7 @@ export async function PATCH(req: NextRequest) {
             mentorName: meeting.mentor_name,
             date: meeting.date,
             time: meeting.time,
+            timezone: meeting.mentee_timezone || requesterRecord?.doc?.timezone || MY_TIMEZONE,
             googleMeetUrl: meeting.googleMeetUrl || ''
           }
         });
@@ -878,7 +885,8 @@ export async function PATCH(req: NextRequest) {
             menteeName: meeting.mentee_name,
             mentorName: meeting.mentor_name,
             date: meeting.date,
-            time: meeting.time
+            time: meeting.time,
+            timezone: meeting.mentee_timezone || requesterRecord?.doc?.timezone || MY_TIMEZONE
           }
         });
         console.log('✅ Decline email sent successfully to:', meeting.mentee_email);

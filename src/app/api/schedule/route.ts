@@ -218,6 +218,8 @@ export async function POST(request: Request) {
         const requesterName = isRequesterMentor ? mentee.mentor_name : mentee.mentee_name;
         const requesterEmail = isRequesterMentor ? mentee.mentor_email : mentee.mentee_email;
         const requesterUID = isRequesterMentor ? mentee.mentorUID : mentee.menteeUID;
+        const requesterTimezone = mentee.timezone || MY_TIMEZONE;
+        const mentorTimezone = mentor.timezone || MY_TIMEZONE;
 
         // Create the scheduling object for the MENTOR (standardized field names)
         const newMeetingForMentor: Scheduling = {
@@ -240,6 +242,8 @@ export async function POST(request: Request) {
             cancel_info: null,
             mentee_name: requesterName,
             mentee_email: requesterEmail,
+            mentee_timezone: requesterTimezone,
+            mentor_timezone: mentorTimezone,
             message,
         };
 
@@ -265,6 +269,8 @@ export async function POST(request: Request) {
             cancel_info: null,
             mentor_name: mentor.mentor_name,
             mentor_email: mentor.mentor_email,
+            mentor_timezone: mentorTimezone,
+            mentee_timezone: requesterTimezone,
             message,
         };
 

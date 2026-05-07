@@ -287,13 +287,9 @@ export async function POST(request: NextRequest) {
               data: {
                 menteeName: mentorMeeting.mentee_name || requesterMeeting.mentee_name || 'there',
                 mentorName: mentorMeeting.mentor_name || 'your mentor',
-                date: new Date(mentorMeeting.date).toLocaleDateString('en-US', {
-                  weekday: 'long',
-                  year: 'numeric',
-                  month: 'long',
-                  day: 'numeric',
-                }),
+                date: mentorMeeting.date,
                 time: mentorMeeting.time,
+                timezone: mentorMeeting.mentee_timezone || requesterMeeting.mentee_timezone || requesterMeeting.timezone || mentorMeeting.timezone || 'Asia/Kuala_Lumpur',
                 formUrl: deliveryState.formUrl,
               },
             });
