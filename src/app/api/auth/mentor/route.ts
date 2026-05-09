@@ -1,3 +1,4 @@
+// src/app/api/auth/mentor/route.ts
 import { NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { User } from '@/lib/types';
@@ -42,7 +43,8 @@ export async function POST(request: Request) {
       tokens: clampToken(mentor.tokens),
       token_cycle: mentor.token_cycle,
       tokenReplenishAt: getTokenCycleEvaluateAtIso(mentor.token_cycle?.tokenUsedAt),
-      timezone: mentor.timezone || 'Asia/Kuala_Lumpur',   // ← include timezone
+      timezone: mentor.timezone || 'Asia/Kuala_Lumpur',
+      accountFrozen: mentor.accountFrozen ?? false,  // ← NEW
     };
 
     return NextResponse.json(user);

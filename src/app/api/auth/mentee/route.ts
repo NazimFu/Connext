@@ -1,3 +1,4 @@
+// src/app/api/auth/mentee/route.ts
 import { NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { User } from '@/lib/types';
@@ -47,7 +48,8 @@ export async function POST(request: Request) {
       cv_link: mentee.cv_link,
       attachmentPath: mentee.attachmentPath,
       allowCVShare: mentee.allowCVShare ?? false,
-      timezone: mentee.timezone || 'Asia/Kuala_Lumpur',   // ← include timezone
+      timezone: mentee.timezone || 'Asia/Kuala_Lumpur',
+      accountFrozen: mentee.accountFrozen ?? false,  // ← NEW
     };
 
     return NextResponse.json(user);

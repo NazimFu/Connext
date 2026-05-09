@@ -1,3 +1,7 @@
+// src/app/api/reports/route.ts
+// CHANGED: When a mentor_report is resolved (approved), set accountFrozen=true on the mentee.
+//          When a mentor_report is rejected OR reopened (status→pending), clear accountFrozen.
+
 import { NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { PatchOperation } from '@azure/cosmos';
@@ -10,7 +14,7 @@ type ReportStatus = 'pending' | 'resolved' | 'rejected';
 
 type ReportSummary = {
   meetingId: string;
-  reportType: 'mentor_report' | 'mentee_report'; // Which report this is
+  reportType: 'mentor_report' | 'mentee_report';
   reportStatus: ReportStatus;
   reportReason: string | null;
   reportFiledByRole: 'mentor' | 'mentee';
@@ -34,11 +38,9 @@ type ReportSummary = {
 const mentorContainer = database.container('mentor');
 const menteeContainer = database.container('mentee');
 
-// Query for meetings with mentor reports
 const MENTOR_REPORT_QUERY =
   'SELECT DISTINCT VALUE s.meetingId FROM c JOIN s IN c.scheduling WHERE IS_DEFINED(s.mentor_report)';
 
-// Query for meetings with mentee reports
 const MENTEE_REPORT_QUERY =
   'SELECT DISTINCT VALUE s.meetingId FROM c JOIN s IN c.scheduling WHERE IS_DEFINED(s.mentee_report)';
 
@@ -49,10 +51,7 @@ const gatherReportedMeetingIds = async (): Promise<string[]> => {
     const { resources: mentorReportIds } = await mentorContainer.items
       .query<string>({ query: MENTOR_REPORT_QUERY })
       .fetchAll();
-
-    mentorReportIds.forEach((meetingId) => {
-      if (meetingId) ids.add(meetingId);
-    });
+    mentorReportIds.forEach((id) => { if (id) ids.add(id); });
   } catch (error) {
     console.error('Failed fetching mentor reports', error);
   }
@@ -61,10 +60,7 @@ const gatherReportedMeetingIds = async (): Promise<string[]> => {
     const { resources: menteeReportIds } = await menteeContainer.items
       .query<string>({ query: MENTEE_REPORT_QUERY })
       .fetchAll();
-
-    menteeReportIds.forEach((meetingId) => {
-      if (meetingId) ids.add(meetingId);
-    });
+    menteeReportIds.forEach((id) => { if (id) ids.add(id); });
   } catch (error) {
     console.error('Failed fetching mentee reports', error);
   }
@@ -75,18 +71,14 @@ const gatherReportedMeetingIds = async (): Promise<string[]> => {
 export async function GET() {
   try {
     const meetingIds = await gatherReportedMeetingIds();
-
     const reports: ReportSummary[] = [];
 
     for (const meetingId of meetingIds) {
       const lookup = await locateMeeting(meetingId);
-      if (!lookup?.meeting) {
-        continue;
-      }
+      if (!lookup?.meeting) continue;
 
       const { meeting, mentor, mentee } = lookup;
 
-      // Check for mentor's report (filed by mentor against mentee)
       if (meeting.mentor_report) {
         reports.push({
           meetingId,
@@ -112,7 +104,6 @@ export async function GET() {
         });
       }
 
-      // Check for mentee's report (filed by mentee against mentor)
       if (meeting.mentee_report) {
         reports.push({
           meetingId,
@@ -155,16 +146,41 @@ export async function GET() {
   }
 }
 
+// ─── Helper: set accountFrozen flag on a user document ───────────────────────
+async function setAccountFrozen(
+  requester: any,
+  menteeIsInMentorContainer: boolean,
+  frozen: boolean
+): Promise<void> {
+  try {
+    requester.accountFrozen = frozen;
+    if (menteeIsInMentorContainer) {
+      await mentorContainer.item(requester.id, requester.id).replace(requester);
+    } else {
+      await menteeContainer.item(requester.id, requester.id).replace(requester);
+    }
+    console.log(
+      `[Reports] accountFrozen=${frozen} set on ${menteeIsInMentorContainer ? 'mentor' : 'mentee'} ${requester.id}`
+    );
+  } catch (err) {
+    console.error('[Reports] Failed to update accountFrozen flag:', err);
+  }
+}
+
 export async function PATCH(request: Request) {
   try {
-    const { meetingId, reportType, status, reviewerName, reviewNotes, actionReason } = await request.json();
+    const { meetingId, reportType, status, reviewerName, reviewNotes, actionReason } =
+      await request.json();
 
     if (!meetingId || typeof meetingId !== 'string') {
       return NextResponse.json({ message: 'Meeting ID is required' }, { status: 400 });
     }
 
     if (!reportType || !['mentor_report', 'mentee_report'].includes(reportType)) {
-      return NextResponse.json({ message: 'Valid reportType is required (mentor_report or mentee_report)' }, { status: 400 });
+      return NextResponse.json(
+        { message: 'Valid reportType is required (mentor_report or mentee_report)' },
+        { status: 400 }
+      );
     }
 
     if (!status || !['pending', 'resolved', 'rejected'].includes(status)) {
@@ -196,38 +212,106 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: 'Meeting not found' }, { status: 404 });
     }
 
-    let { mentor, mentorScheduleIndex, mentee, menteeScheduleIndex, meeting, menteeIsInMentorContainer } = lookup;
+    let { mentor, mentorScheduleIndex, mentee, menteeScheduleIndex, meeting, menteeIsInMentorContainer } =
+      lookup;
 
-    const resolvedTimestamp = (normalizedStatus === 'resolved' || normalizedStatus === 'rejected') ? new Date().toISOString() : null;
+    const resolvedTimestamp =
+      normalizedStatus === 'resolved' || normalizedStatus === 'rejected'
+        ? new Date().toISOString()
+        : null;
 
     const mentorOperations: PatchOperation[] = [];
     if (mentor && mentorScheduleIndex > -1) {
-      mentorOperations.push({ op: 'add', path: `/scheduling/${mentorScheduleIndex}/${reportType}/status`, value: normalizedStatus });
+      mentorOperations.push({
+        op: 'add',
+        path: `/scheduling/${mentorScheduleIndex}/${reportType}/status`,
+        value: normalizedStatus,
+      });
       if (normalizedStatus === 'resolved' || normalizedStatus === 'rejected') {
-        mentorOperations.push({ op: 'add', path: `/scheduling/${mentorScheduleIndex}/${reportType}/review_notes`, value: notes || null });
-        mentorOperations.push({ op: 'add', path: `/scheduling/${mentorScheduleIndex}/${reportType}/reviewed_at`, value: resolvedTimestamp });
-        mentorOperations.push({ op: 'add', path: `/scheduling/${mentorScheduleIndex}/${reportType}/reviewed_by`, value: reviewer });
+        mentorOperations.push({
+          op: 'add',
+          path: `/scheduling/${mentorScheduleIndex}/${reportType}/review_notes`,
+          value: notes || null,
+        });
+        mentorOperations.push({
+          op: 'add',
+          path: `/scheduling/${mentorScheduleIndex}/${reportType}/reviewed_at`,
+          value: resolvedTimestamp,
+        });
+        mentorOperations.push({
+          op: 'add',
+          path: `/scheduling/${mentorScheduleIndex}/${reportType}/reviewed_by`,
+          value: reviewer,
+        });
       }
-      // Also update legacy fields for backward compatibility
-      mentorOperations.push({ op: 'add', path: `/scheduling/${mentorScheduleIndex}/report_status`, value: normalizedStatus });
-      mentorOperations.push({ op: 'add', path: `/scheduling/${mentorScheduleIndex}/report_review_notes`, value: (normalizedStatus === 'resolved' || normalizedStatus === 'rejected') ? notes || null : null });
-      mentorOperations.push({ op: 'add', path: `/scheduling/${mentorScheduleIndex}/report_reviewed_at`, value: resolvedTimestamp });
-      mentorOperations.push({ op: 'add', path: `/scheduling/${mentorScheduleIndex}/report_reviewed_by`, value: (normalizedStatus === 'resolved' || normalizedStatus === 'rejected') ? reviewer : null });
+      // Legacy fields
+      mentorOperations.push({
+        op: 'add',
+        path: `/scheduling/${mentorScheduleIndex}/report_status`,
+        value: normalizedStatus,
+      });
+      mentorOperations.push({
+        op: 'add',
+        path: `/scheduling/${mentorScheduleIndex}/report_review_notes`,
+        value: normalizedStatus === 'resolved' || normalizedStatus === 'rejected' ? notes || null : null,
+      });
+      mentorOperations.push({
+        op: 'add',
+        path: `/scheduling/${mentorScheduleIndex}/report_reviewed_at`,
+        value: resolvedTimestamp,
+      });
+      mentorOperations.push({
+        op: 'add',
+        path: `/scheduling/${mentorScheduleIndex}/report_reviewed_by`,
+        value: normalizedStatus === 'resolved' || normalizedStatus === 'rejected' ? reviewer : null,
+      });
     }
 
     const menteeOperations: PatchOperation[] = [];
     if (mentee && menteeScheduleIndex > -1) {
-      menteeOperations.push({ op: 'add', path: `/scheduling/${menteeScheduleIndex}/${reportType}/status`, value: normalizedStatus });
+      menteeOperations.push({
+        op: 'add',
+        path: `/scheduling/${menteeScheduleIndex}/${reportType}/status`,
+        value: normalizedStatus,
+      });
       if (normalizedStatus === 'resolved' || normalizedStatus === 'rejected') {
-        menteeOperations.push({ op: 'add', path: `/scheduling/${menteeScheduleIndex}/${reportType}/review_notes`, value: notes || null });
-        menteeOperations.push({ op: 'add', path: `/scheduling/${menteeScheduleIndex}/${reportType}/reviewed_at`, value: resolvedTimestamp });
-        menteeOperations.push({ op: 'add', path: `/scheduling/${menteeScheduleIndex}/${reportType}/reviewed_by`, value: reviewer });
+        menteeOperations.push({
+          op: 'add',
+          path: `/scheduling/${menteeScheduleIndex}/${reportType}/review_notes`,
+          value: notes || null,
+        });
+        menteeOperations.push({
+          op: 'add',
+          path: `/scheduling/${menteeScheduleIndex}/${reportType}/reviewed_at`,
+          value: resolvedTimestamp,
+        });
+        menteeOperations.push({
+          op: 'add',
+          path: `/scheduling/${menteeScheduleIndex}/${reportType}/reviewed_by`,
+          value: reviewer,
+        });
       }
-      // Also update legacy fields for backward compatibility
-      menteeOperations.push({ op: 'add', path: `/scheduling/${menteeScheduleIndex}/report_status`, value: normalizedStatus });
-      menteeOperations.push({ op: 'add', path: `/scheduling/${menteeScheduleIndex}/report_review_notes`, value: (normalizedStatus === 'resolved' || normalizedStatus === 'rejected') ? notes || null : null });
-      menteeOperations.push({ op: 'add', path: `/scheduling/${menteeScheduleIndex}/report_reviewed_at`, value: resolvedTimestamp });
-      menteeOperations.push({ op: 'add', path: `/scheduling/${menteeScheduleIndex}/report_reviewed_by`, value: (normalizedStatus === 'resolved' || normalizedStatus === 'rejected') ? reviewer : null });
+      // Legacy fields
+      menteeOperations.push({
+        op: 'add',
+        path: `/scheduling/${menteeScheduleIndex}/report_status`,
+        value: normalizedStatus,
+      });
+      menteeOperations.push({
+        op: 'add',
+        path: `/scheduling/${menteeScheduleIndex}/report_review_notes`,
+        value: normalizedStatus === 'resolved' || normalizedStatus === 'rejected' ? notes || null : null,
+      });
+      menteeOperations.push({
+        op: 'add',
+        path: `/scheduling/${menteeScheduleIndex}/report_reviewed_at`,
+        value: resolvedTimestamp,
+      });
+      menteeOperations.push({
+        op: 'add',
+        path: `/scheduling/${menteeScheduleIndex}/report_reviewed_by`,
+        value: normalizedStatus === 'resolved' || normalizedStatus === 'rejected' ? reviewer : null,
+      });
     }
 
     if (mentorOperations.length === 0 && menteeOperations.length === 0) {
@@ -236,7 +320,9 @@ export async function PATCH(request: Request) {
 
     if (mentorOperations.length > 0) {
       await mentorContainer.item(mentor!.id, mentor!.id).patch(mentorOperations);
-      const { resource: updatedMentor } = await mentorContainer.item(mentor!.id, mentor!.id).read<Mentor>();
+      const { resource: updatedMentor } = await mentorContainer
+        .item(mentor!.id, mentor!.id)
+        .read<Mentor>();
       if (updatedMentor) {
         mentor = updatedMentor;
         mentorScheduleIndex = findScheduleIndex(updatedMentor.scheduling, meetingId);
@@ -246,18 +332,25 @@ export async function PATCH(request: Request) {
 
     if (menteeOperations.length > 0) {
       if (menteeIsInMentorContainer) {
-        await mentorContainer.item((mentee as any).id, (mentee as any).id).patch(menteeOperations);
+        await mentorContainer
+          .item((mentee as any).id, (mentee as any).id)
+          .patch(menteeOperations);
         const { resource: updatedMenteeAsMentor } = await mentorContainer
           .item((mentee as any).id, (mentee as any).id)
           .read<Mentor>();
         if (updatedMenteeAsMentor) {
           mentee = updatedMenteeAsMentor as any;
-          menteeScheduleIndex = findScheduleIndex((updatedMenteeAsMentor as any).scheduling, meetingId);
+          menteeScheduleIndex = findScheduleIndex(
+            (updatedMenteeAsMentor as any).scheduling,
+            meetingId
+          );
           meeting = (updatedMenteeAsMentor as any).scheduling?.[menteeScheduleIndex] ?? meeting;
         }
       } else {
         await menteeContainer.item(mentee!.id, mentee!.id).patch(menteeOperations);
-        const { resource: updatedMentee } = await menteeContainer.item(mentee!.id, mentee!.id).read<Mentee>();
+        const { resource: updatedMentee } = await menteeContainer
+          .item(mentee!.id, mentee!.id)
+          .read<Mentee>();
         if (updatedMentee) {
           mentee = updatedMentee;
           menteeScheduleIndex = findScheduleIndex(updatedMentee.scheduling, meetingId);
@@ -266,78 +359,89 @@ export async function PATCH(request: Request) {
       }
     }
 
-    // If a mentor-filed report is rejected by admin, do not refund immediately.
-    // Clear report penalty and let token return happen at normal cycle evaluation time.
-    if (reportType === 'mentor_report' && normalizedStatus === 'rejected' && mentee) {
-      const requester: any = mentee as any;
+    // ─── ACCOUNT FREEZE LOGIC ────────────────────────────────────────────────
+    // Only mentor_report affects the reported mentee's account freeze status.
+    if (reportType === 'mentor_report' && mentee) {
+      const requester: any = mentee;
 
-      if (requester.token_cycle?.meetingId === meetingId) {
-        requester.token_cycle.mentorReported = false;
-        requester.token_cycle.reportRecordedAt = null;
-      }
+      if (normalizedStatus === 'resolved') {
+        // Admin approved the report → FREEZE the reported user's account
+        await setAccountFrozen(requester, !!menteeIsInMentorContainer, true);
 
-      if (menteeIsInMentorContainer) {
-        await mentorContainer.item(requester.id, requester.id).replace(requester);
-      } else {
-        await menteeContainer.item(requester.id, requester.id).replace(requester);
-      }
-    }
+        // Apply token penalty (immediate cycle forfeiture)
+        requester.tokens = 0;
+        if (
+          requester.token_cycle?.meetingId === meetingId &&
+          requester.token_cycle.status === 'pending'
+        ) {
+          requester.token_cycle.mentorReported = true;
+          requester.token_cycle.reportRecordedAt = resolvedTimestamp;
+          requester.token_cycle.status = 'forfeited';
+          requester.token_cycle.evaluatedAt = resolvedTimestamp;
+        }
+        requester.tokens = clampToken(requester.tokens);
 
-    // Approving mentor report applies immediate penalty and sends immediate email.
-    if (reportType === 'mentor_report' && normalizedStatus === 'resolved' && mentee) {
-      const requester: any = mentee as any;
+        if (menteeIsInMentorContainer) {
+          await mentorContainer.item(requester.id, requester.id).replace(requester);
+        } else {
+          await menteeContainer.item(requester.id, requester.id).replace(requester);
+        }
 
-      // Immediate cycle end with forfeiture for this meeting.
-      requester.tokens = 0;
-      if (requester.token_cycle?.meetingId === meetingId) {
-        requester.token_cycle.mentorReported = true;
-        requester.token_cycle.reportRecordedAt = resolvedTimestamp;
-        requester.token_cycle.status = 'forfeited';
-        requester.token_cycle.evaluatedAt = resolvedTimestamp;
-      }
-      requester.tokens = clampToken(requester.tokens);
+        // Send penalty + freeze email
+        const recipientEmail =
+          requester.mentee_email || requester.mentor_email || requester.email;
+        const recipientName =
+          requester.mentee_name || requester.mentor_name || requester.name || 'there';
 
-      if (menteeIsInMentorContainer) {
-        await mentorContainer.item(requester.id, requester.id).replace(requester);
-      } else {
-        await menteeContainer.item(requester.id, requester.id).replace(requester);
-      }
+        if (recipientEmail) {
+          try {
+            await sendEmail({
+              to: recipientEmail,
+              subject: 'Account Frozen – Report Approved',
+              template: 'mentee-report-approved-penalty',
+              data: {
+                menteeName: recipientName,
+                reason: selectedReason,
+                adminNotes: notes || null,
+                date: meeting?.date || null,
+                time: meeting?.time || null,
+                mentorName: meeting?.mentor_name || mentor?.mentor_name || 'Your mentor',
+              },
+            });
+          } catch (emailError) {
+            console.error('Failed to send report approved email:', emailError);
+          }
+        }
+      } else if (normalizedStatus === 'rejected' || normalizedStatus === 'pending') {
+        // Admin rejected the report OR reopened it → UNFREEZE the account
+        // For 'pending' (reopen), we also unfreeze so the user is not stuck.
+        await setAccountFrozen(requester, !!menteeIsInMentorContainer, false);
 
-      const recipientEmail = requester.mentee_email || requester.mentor_email || requester.email;
-      const recipientName = requester.mentee_name || requester.mentor_name || requester.name || 'there';
-
-      if (recipientEmail) {
-        try {
-          await sendEmail({
-            to: recipientEmail,
-            subject: 'Report approved - penalty applied',
-            template: 'mentee-report-approved-penalty',
-            data: {
-              menteeName: recipientName,
-              reason: selectedReason,
-              adminNotes: notes || null,
-              date: meeting?.date || null,
-              time: meeting?.time || null,
-              mentorName: meeting?.mentor_name || mentor?.mentor_name || 'Your mentor',
-            },
-          });
-        } catch (emailError) {
-          console.error('Failed to send report approved email:', emailError);
+        if (normalizedStatus === 'rejected') {
+          // Clear mentor-reported flag so token cycle can be evaluated normally
+          if (requester.token_cycle?.meetingId === meetingId) {
+            requester.token_cycle.mentorReported = false;
+            requester.token_cycle.reportRecordedAt = null;
+          }
+          if (menteeIsInMentorContainer) {
+            await mentorContainer.item(requester.id, requester.id).replace(requester);
+          } else {
+            await menteeContainer.item(requester.id, requester.id).replace(requester);
+          }
         }
       }
     }
-
-    // Rejected mentor reports are deferred to cycle evaluation; approved mentor reports apply immediate forfeiture.
 
     return NextResponse.json({
       success: true,
       meeting,
       status: normalizedStatus,
-      message: normalizedStatus === 'resolved' 
-        ? 'Report accepted' 
-        : normalizedStatus === 'rejected' 
-        ? 'Report rejected' 
-        : 'Report status updated',
+      message:
+        normalizedStatus === 'resolved'
+          ? 'Report accepted — account frozen'
+          : normalizedStatus === 'rejected'
+          ? 'Report rejected — account unfrozen'
+          : 'Report status updated',
     });
   } catch (error) {
     console.error('Failed to update report', error);

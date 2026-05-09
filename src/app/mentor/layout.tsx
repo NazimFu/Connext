@@ -1,5 +1,8 @@
 'use client';
 
+// src/app/mentor/layout.tsx
+// CHANGED: imports AccountFrozenOverlay and renders it when user.accountFrozen === true
+
 import React, { useState, useTransition, useEffect, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -17,36 +20,16 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { AccountFrozenOverlay } from '@/components/AccountFrozenOverlay'; // ← NEW
 
 const navigationItems = [
-  {
-    title: 'Tasks',
-    url: '/mentor/tasks',
-    icon: CheckSquare,
-  },
-  {
-    title: 'Sessions',
-    url: '/mentor/meeting-requests',
-    icon: Calendar,
-  },
-  {
-    title: 'My Mentees',
-    url: '/mentor/mentees',
-    icon: Users,
-  },
-  {
-    title: 'Browse Mentors',
-    url: '/mentor/mentor-listing',
-    icon: Search,
-  },
-  {
-    title: 'My Profile',
-    url: '/mentor/profile/edit',
-    icon: User,
-  },
+  { title: 'Tasks',         url: '/mentor/tasks',           icon: CheckSquare },
+  { title: 'Sessions',      url: '/mentor/meeting-requests', icon: Calendar },
+  { title: 'My Mentees',    url: '/mentor/mentees',          icon: Users },
+  { title: 'Browse Mentors',url: '/mentor/mentor-listing',   icon: Search },
+  { title: 'My Profile',    url: '/mentor/profile/edit',     icon: User },
 ];
 
-// Pages that should not show the sidebar
 const pagesWithoutSidebar = [
   '/mentor/forms',
   '/mentor/verification-pending',
@@ -59,8 +42,6 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isPending, startTransition] = useTransition();
 
-  // Track whether the meeting associated with the current token cycle has started
-  // and whether feedback has been submitted
   const [meetingStarted, setMeetingStarted] = useState(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
 
@@ -74,14 +55,12 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
       return;
     }
 
-    // Check if feedback already submitted in token cycle
     if (tokenCycle.feedbackSubmittedAt && tokenCycle.feedbackValid) {
       setFeedbackSubmitted(true);
       setMeetingStarted(true);
       return;
     }
 
-    // Determine if meeting has started based on meetingDate + meetingTime
     if (tokenCycle.meetingDate && tokenCycle.meetingTime) {
       try {
         const { convertMeetingTime } = await import('@/lib/timezone');
@@ -105,13 +84,10 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
             if (res.ok) {
               const data = await res.json();
               const cycle = data.tokenCycle;
-              const submitted = !!(cycle?.feedbackSubmittedAt && cycle?.feedbackValid);
-              setFeedbackSubmitted(submitted);
+              setFeedbackSubmitted(!!(cycle?.feedbackSubmittedAt && cycle?.feedbackValid));
             }
           } catch {
-            setFeedbackSubmitted(
-              !!(tokenCycle.feedbackSubmittedAt && tokenCycle.feedbackValid)
-            );
+            setFeedbackSubmitted(!!(tokenCycle.feedbackSubmittedAt && tokenCycle.feedbackValid));
           }
         } else {
           setFeedbackSubmitted(false);
@@ -132,34 +108,25 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
     return () => clearInterval(interval);
   }, [checkMeetingAndFeedbackStatus]);
 
-  // Check if current page should hide sidebar
   const shouldHideSidebar = pagesWithoutSidebar.some(path => pathname.startsWith(path));
 
   const handleLogout = async () => {
     try {
       await logout();
       window.location.href = '/';
-    } catch (error) {
-      console.error('Logout error:', error);
+    } catch {
       window.location.href = '/';
     }
   };
 
-  const isActive = (url: string) => {
-    return pathname === url || pathname.startsWith(url);
-  };
+  const isActive = (url: string) => pathname === url || pathname.startsWith(url);
 
-  // If sidebar should be hidden, just render children
-  if (shouldHideSidebar) {
-    return <>{children}</>;
-  }
+  if (shouldHideSidebar) return <>{children}</>;
 
   const tokenCycle = user?.token_cycle;
   const tokenCycleStatus = tokenCycle?.status;
 
-  // Compute cycle display info from token_cycle data
   let daysRemainingInCycle: number | null = null;
-
   if (tokenCycleStatus === 'pending' && tokenCycle) {
     const now = new Date();
     const tokenUsedAt = tokenCycle.tokenUsedAt ? new Date(tokenCycle.tokenUsedAt) : null;
@@ -170,17 +137,13 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
     }
   }
 
-  // Only show the feedback nudge when:
-  // 1. There is a pending token cycle
-  // 2. The meeting has started (>= 2 hours after meeting time)
-  // 3. Feedback has NOT yet been submitted
-  const showFeedbackNudge =
-    tokenCycleStatus === 'pending' &&
-    meetingStarted &&
-    !feedbackSubmitted;
+  const showFeedbackNudge = tokenCycleStatus === 'pending' && meetingStarted && !feedbackSubmitted;
 
   return (
     <div className="min-h-screen flex w-full bg-gradient-to-br from-white via-yellow-50/30 to-amber-50/40">
+      {/* ── ACCOUNT FROZEN OVERLAY ─────────────────────────────────────────── */}
+      {(user as any)?.accountFrozen && <AccountFrozenOverlay />}
+
       <style jsx global>{`
         :root {
           --primary: 45 93% 47%;
@@ -197,11 +160,10 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
           sidebarOpen ? 'w-64' : 'w-24 md:w-28'
         )}
       >
-        {/* Sidebar Header */}
         <div className="border-b border-yellow-100/50 p-4 md:p-6 flex items-center justify-center flex-shrink-0">
           {sidebarOpen ? (
             <div className="flex items-center gap-3 group">
-              <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-yellow-500/20 group-hover:shadow-yellow-500/30 transition-all duration-300">
+              <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-yellow-500/20">
                 <Users className="w-5 h-5 md:w-6 md:h-6 text-white" />
               </div>
               <div className="hidden sm:block">
@@ -216,19 +178,13 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
           )}
         </div>
 
-        {/* Toggle Button */}
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
           className="absolute top-16 md:top-20 -right-3 w-6 h-6 bg-white border border-yellow-100/50 rounded-full flex items-center justify-center shadow-md hover:shadow-lg transition-all z-10"
         >
-          {sidebarOpen ? (
-            <ChevronLeft className="w-4 h-4 text-gray-600" />
-          ) : (
-            <ChevronRight className="w-4 h-4 text-gray-600" />
-          )}
+          {sidebarOpen ? <ChevronLeft className="w-4 h-4 text-gray-600" /> : <ChevronRight className="w-4 h-4 text-gray-600" />}
         </button>
 
-        {/* Navigation */}
         <nav className="flex-1 p-2 md:p-3 overflow-y-auto">
           <ul className="space-y-1">
             {navigationItems.map((item) => (
@@ -236,10 +192,7 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
                 <Link
                   href={item.url}
                   prefetch={true}
-                  onClick={() => {
-                    startTransition(() => {});
-                    refreshUser();
-                  }}
+                  onClick={() => { startTransition(() => {}); refreshUser(); }}
                   className={cn(
                     sidebarOpen
                       ? 'w-full flex items-center gap-3 px-2 md:px-4 py-3 rounded-xl transition-all duration-200 group'
@@ -264,7 +217,6 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
           </ul>
         </nav>
 
-        {/* User Footer with Tokens */}
         <div className="border-t border-yellow-100/50 p-2 md:p-4 flex-shrink-0">
           {user && (
             <div className="space-y-2">
@@ -275,13 +227,10 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
                       {user.name?.[0]?.toUpperCase() || 'M'}
                     </div>
                     <div className="flex-1 min-w-0 hidden sm:block">
-                      <p className="font-semibold text-gray-900 text-xs md:text-sm truncate">
-                        {user.name || 'Mentor'}
-                      </p>
+                      <p className="font-semibold text-gray-900 text-xs md:text-sm truncate">{user.name || 'Mentor'}</p>
                       <p className="text-xs text-gray-500 truncate">{user.email}</p>
                     </div>
                   </div>
-                  {/* Professional Tokens Card with Tooltip */}
                   <div className="relative group mt-2">
                     <div className="flex flex-col items-center justify-center bg-gradient-to-br from-gray-100 via-yellow-50 to-amber-100 rounded-xl px-4 py-2 shadow text-gray-900 border border-yellow-200 hover:border-yellow-400 transition-all duration-200 cursor-pointer">
                       <span className="font-extrabold text-lg tracking-tight drop-shadow-sm">{user.tokens ?? 0}</span>
@@ -293,7 +242,6 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
                               Replenishes in {daysRemainingInCycle} day{daysRemainingInCycle !== 1 ? 's' : ''}
                             </span>
                           )}
-                          {/* Only show feedback nudge when meeting has started AND feedback not yet submitted */}
                           {showFeedbackNudge && (
                             <span className="text-[11px] font-semibold text-orange-600 text-center block">
                               Fill feedback form to recover token
@@ -302,11 +250,10 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
                         </div>
                       )}
                     </div>
-                    {/* Tooltip */}
                     <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
                       {tokenCycleStatus === 'pending'
                         ? showFeedbackNudge
-                          ? `Active cycle: Submit your feedback form to unlock token replenishment. ${daysRemainingInCycle != null ? `${daysRemainingInCycle} day(s) remaining.` : ''}`
+                          ? `Active cycle: Submit your feedback form to unlock token replenishment.`
                           : `Active cycle: Token replenishes in ${daysRemainingInCycle ?? '?'} day(s).`
                         : 'This token is for requesting meetings'}
                     </div>
@@ -328,20 +275,8 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
                       <span className="font-extrabold text-lg tracking-tight drop-shadow-sm">{user.tokens ?? 0}</span>
                       <span className="text-base font-bold text-amber-700">Tokens</span>
                     </div>
-                    {/* Tooltip */}
-                    <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 w-52 px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
-                      {tokenCycleStatus === 'pending'
-                        ? showFeedbackNudge
-                          ? `Active cycle: Submit your feedback form to unlock token replenishment. ${daysRemainingInCycle != null ? `${daysRemainingInCycle} day(s) remaining.` : ''}`
-                          : `Active cycle: Token replenishes in ${daysRemainingInCycle ?? '?'} day(s).`
-                        : 'This token is for requesting meetings'}
-                    </div>
                   </div>
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-red-50 transition-colors"
-                    title="Logout"
-                  >
+                  <button onClick={handleLogout} className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-red-50 transition-colors" title="Logout">
                     <LogOut className="w-5 h-5 text-red-600" />
                   </button>
                 </div>
@@ -351,8 +286,7 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <main 
+      <main
         className={cn(
           'flex-1 flex flex-col min-w-0 transition-all duration-300',
           sidebarOpen ? 'ml-64' : 'ml-24 md:ml-28'
