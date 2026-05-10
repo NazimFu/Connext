@@ -1,5 +1,6 @@
 'use client';
 
+
 import Link from "next/link"
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button"
@@ -11,9 +12,12 @@ import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import type { UserRoleResponse } from "@/lib/types";
 
+
 import { auth } from '../../lib/firebase'
 import { signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
 import { Eye, EyeOff } from 'lucide-react'
+
+export const dynamic = 'force-dynamic';
 
 export default function LoginPage() {
   const router = useRouter();

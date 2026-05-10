@@ -10,6 +10,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const { user, isAuthLoading } = useAuth();
     const pathname = usePathname();
     const router = useRouter();
+    
 
     // Handle routing protection and redirects
     useEffect(() => {
@@ -139,7 +140,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return (
         <>
             {showHeader && <Header />}
-            <main>{children}</main>
+            <main style={{ minHeight: '100vh' }}>{children}</main>
         </>
     );
 }

@@ -13,6 +13,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, Eye, EyeOff } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
+export const dynamic = 'force-dynamic';
+
+
 export default function MentorSignupPage() {
   const router = useRouter();
   const { toast } = useToast();

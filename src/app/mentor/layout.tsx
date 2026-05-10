@@ -1,33 +1,33 @@
 'use client';
 
 // src/app/mentor/layout.tsx
-// CHANGED: imports AccountFrozenOverlay and renders it when user.accountFrozen === true
+// FIX: background applied to every layer to prevent white flash on mobile.
 
 import React, { useState, useTransition, useEffect, useCallback } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
-import { 
-  CheckSquare, 
-  Users, 
-  Calendar, 
-  User, 
-  LogOut, 
-  ChevronLeft,
-  ChevronRight,
+import {
+  CheckSquare,
+  Users,
+  Calendar,
+  User,
+  LogOut,
   Search,
+  X,
+  Menu,
   Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { AccountFrozenOverlay } from '@/components/AccountFrozenOverlay'; // ← NEW
+import { AccountFrozenOverlay } from '@/components/AccountFrozenOverlay';
 
 const navigationItems = [
-  { title: 'Tasks',         url: '/mentor/tasks',           icon: CheckSquare },
-  { title: 'Sessions',      url: '/mentor/meeting-requests', icon: Calendar },
-  { title: 'My Mentees',    url: '/mentor/mentees',          icon: Users },
-  { title: 'Browse Mentors',url: '/mentor/mentor-listing',   icon: Search },
-  { title: 'My Profile',    url: '/mentor/profile/edit',     icon: User },
+  { title: 'Tasks',          url: '/mentor/tasks',            icon: CheckSquare },
+  { title: 'Sessions',       url: '/mentor/meeting-requests', icon: Calendar },
+  { title: 'My Mentees',     url: '/mentor/mentees',          icon: Users },
+  { title: 'Browse Mentors', url: '/mentor/mentor-listing',   icon: Search },
+  { title: 'My Profile',     url: '/mentor/profile/edit',     icon: User },
 ];
 
 const pagesWithoutSidebar = [
@@ -35,11 +35,12 @@ const pagesWithoutSidebar = [
   '/mentor/verification-pending',
 ];
 
+const APP_BG = '#fffdf4';
+
 export default function MentorLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { user, logout, refreshUser } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const [meetingStarted, setMeetingStarted] = useState(false);
@@ -47,76 +48,49 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
 
   const checkMeetingAndFeedbackStatus = useCallback(async () => {
     if (!user?.id) return;
-
     const tokenCycle = user?.token_cycle;
     if (!tokenCycle || tokenCycle.status !== 'pending') {
-      setMeetingStarted(false);
-      setFeedbackSubmitted(false);
-      return;
+      setMeetingStarted(false); setFeedbackSubmitted(false); return;
     }
-
     if (tokenCycle.feedbackSubmittedAt && tokenCycle.feedbackValid) {
-      setFeedbackSubmitted(true);
-      setMeetingStarted(true);
-      return;
+      setFeedbackSubmitted(true); setMeetingStarted(true); return;
     }
-
     if (tokenCycle.meetingDate && tokenCycle.meetingTime) {
       try {
         const { convertMeetingTime } = await import('@/lib/timezone');
-        const { utcDate } = convertMeetingTime(
-          tokenCycle.meetingDate,
-          tokenCycle.meetingTime,
-          'Asia/Kuala_Lumpur'
-        );
+        const { utcDate } = convertMeetingTime(tokenCycle.meetingDate, tokenCycle.meetingTime, 'Asia/Kuala_Lumpur');
         const now = new Date();
-        const twoHoursAfterMeeting = new Date(utcDate.getTime() + 2 * 60 * 60 * 1000);
-        const hasStarted = now >= twoHoursAfterMeeting;
+        const twoHoursAfter = new Date(utcDate.getTime() + 2 * 60 * 60 * 1000);
+        const hasStarted = now >= twoHoursAfter;
         setMeetingStarted(hasStarted);
-
         if (hasStarted) {
           try {
-            const ts = Date.now();
-            const res = await fetch(`/api/token-cycle/status?userId=${user.id}&_t=${ts}`, {
-              cache: 'no-store',
-              headers: { 'Cache-Control': 'no-cache' }
-            });
-            if (res.ok) {
-              const data = await res.json();
-              const cycle = data.tokenCycle;
-              setFeedbackSubmitted(!!(cycle?.feedbackSubmittedAt && cycle?.feedbackValid));
-            }
-          } catch {
-            setFeedbackSubmitted(!!(tokenCycle.feedbackSubmittedAt && tokenCycle.feedbackValid));
-          }
-        } else {
-          setFeedbackSubmitted(false);
-        }
-      } catch {
-        setMeetingStarted(false);
-        setFeedbackSubmitted(false);
-      }
-    } else {
-      setMeetingStarted(false);
-      setFeedbackSubmitted(false);
-    }
+            const res = await fetch(`/api/token-cycle/status?userId=${user.id}&_t=${Date.now()}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
+            if (res.ok) { const d = await res.json(); setFeedbackSubmitted(!!(d.tokenCycle?.feedbackSubmittedAt && d.tokenCycle?.feedbackValid)); }
+          } catch { setFeedbackSubmitted(!!(tokenCycle.feedbackSubmittedAt && tokenCycle.feedbackValid)); }
+        } else { setFeedbackSubmitted(false); }
+      } catch { setMeetingStarted(false); setFeedbackSubmitted(false); }
+    } else { setMeetingStarted(false); setFeedbackSubmitted(false); }
   }, [user?.id, user?.token_cycle]);
 
   useEffect(() => {
     checkMeetingAndFeedbackStatus();
-    const interval = setInterval(checkMeetingAndFeedbackStatus, 60 * 1000);
-    return () => clearInterval(interval);
+    const id = setInterval(checkMeetingAndFeedbackStatus, 60_000);
+    return () => clearInterval(id);
   }, [checkMeetingAndFeedbackStatus]);
 
-  const shouldHideSidebar = pagesWithoutSidebar.some(path => pathname.startsWith(path));
+  useEffect(() => { setSidebarOpen(false); }, [pathname]);
+
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => { if (e.key === 'Escape') setSidebarOpen(false); };
+    document.addEventListener('keydown', fn);
+    return () => document.removeEventListener('keydown', fn);
+  }, []);
+
+  const shouldHideSidebar = pagesWithoutSidebar.some(p => pathname.startsWith(p));
 
   const handleLogout = async () => {
-    try {
-      await logout();
-      window.location.href = '/';
-    } catch {
-      window.location.href = '/';
-    }
+    try { await logout(); window.location.href = '/'; } catch { window.location.href = '/'; }
   };
 
   const isActive = (url: string) => pathname === url || pathname.startsWith(url);
@@ -125,23 +99,21 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
 
   const tokenCycle = user?.token_cycle;
   const tokenCycleStatus = tokenCycle?.status;
-
   let daysRemainingInCycle: number | null = null;
   if (tokenCycleStatus === 'pending' && tokenCycle) {
-    const now = new Date();
     const tokenUsedAt = tokenCycle.tokenUsedAt ? new Date(tokenCycle.tokenUsedAt) : null;
     if (tokenUsedAt && !Number.isNaN(tokenUsedAt.getTime())) {
       const cooldownEnd = new Date(tokenUsedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
-      const msRemaining = cooldownEnd.getTime() - now.getTime();
-      daysRemainingInCycle = Math.max(0, Math.ceil(msRemaining / (24 * 60 * 60 * 1000)));
+      daysRemainingInCycle = Math.max(0, Math.ceil((cooldownEnd.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
     }
   }
-
   const showFeedbackNudge = tokenCycleStatus === 'pending' && meetingStarted && !feedbackSubmitted;
 
   return (
-    <div className="min-h-screen flex w-full bg-gradient-to-br from-white via-yellow-50/30 to-amber-50/40">
-      {/* ── ACCOUNT FROZEN OVERLAY ─────────────────────────────────────────── */}
+    <div
+      className="min-h-screen min-h-dvh flex w-full"
+      style={{ backgroundColor: APP_BG }}
+    >
       {(user as any)?.accountFrozen && <AccountFrozenOverlay />}
 
       <style jsx global>{`
@@ -151,41 +123,47 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
           --accent: 48 96% 53%;
           --accent-foreground: 0 0% 0%;
         }
+        html, body { background-color: ${APP_BG} !important; }
       `}</style>
+
+      {/* Backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Sidebar */}
       <aside
         className={cn(
-          'flex flex-col border-r border-yellow-100/50 bg-white/80 backdrop-blur-md transition-all duration-300 ease-in-out fixed left-0 top-0 h-screen z-50',
-          sidebarOpen ? 'w-64' : 'w-24 md:w-28'
+          'flex flex-col border-r border-yellow-100/50 bg-white/95 backdrop-blur-md',
+          'fixed left-0 top-0 h-screen z-50 w-72',
+          'transition-transform duration-300 ease-in-out shadow-2xl',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="border-b border-yellow-100/50 p-4 md:p-6 flex items-center justify-center flex-shrink-0">
-          {sidebarOpen ? (
-            <div className="flex items-center gap-3 group">
-              <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-yellow-500/20">
-                <Users className="w-5 h-5 md:w-6 md:h-6 text-white" />
-              </div>
-              <div className="hidden sm:block">
-                <h2 className="font-bold text-lg md:text-xl text-gray-900">Connext</h2>
-                <p className="text-xs text-gray-500">Mentor Portal</p>
-              </div>
+        <div className="border-b border-yellow-100/50 p-5 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-yellow-500/20">
+              <Users className="w-5 h-5 text-white" />
             </div>
-          ) : (
-            <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-yellow-500/20">
-              <Users className="w-5 h-5 md:w-6 md:h-6 text-white" />
+            <div>
+              <h2 className="font-bold text-lg text-gray-900 leading-none">Connext</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Mentor Portal</p>
             </div>
-          )}
+          </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors text-gray-500"
+            aria-label="Close sidebar"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="absolute top-16 md:top-20 -right-3 w-6 h-6 bg-white border border-yellow-100/50 rounded-full flex items-center justify-center shadow-md hover:shadow-lg transition-all z-10"
-        >
-          {sidebarOpen ? <ChevronLeft className="w-4 h-4 text-gray-600" /> : <ChevronRight className="w-4 h-4 text-gray-600" />}
-        </button>
-
-        <nav className="flex-1 p-2 md:p-3 overflow-y-auto">
+        <nav className="flex-1 p-3 overflow-y-auto">
           <ul className="space-y-1">
             {navigationItems.map((item) => (
               <li key={item.title}>
@@ -194,113 +172,119 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
                   prefetch={true}
                   onClick={() => { startTransition(() => {}); refreshUser(); }}
                   className={cn(
-                    sidebarOpen
-                      ? 'w-full flex items-center gap-3 px-2 md:px-4 py-3 rounded-xl transition-all duration-200 group'
-                      : 'w-full flex items-center justify-center py-4 rounded-xl transition-all duration-200 group',
+                    'w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group',
                     isActive(item.url)
                       ? 'bg-gradient-to-r from-yellow-50 to-amber-50 text-amber-700 shadow-sm'
-                      : 'hover:bg-yellow-50 hover:text-amber-700'
+                      : 'hover:bg-yellow-50 hover:text-amber-700 text-gray-700'
                   )}
-                  title={!sidebarOpen ? item.title : undefined}
                 >
-                  <item.icon
-                    className={cn(
-                      'w-5 h-5 transition-transform duration-200 group-hover:scale-110 flex-shrink-0',
-                      isActive(item.url) ? 'text-amber-600' : 'text-gray-500',
-                      !sidebarOpen && 'mx-auto'
-                    )}
-                  />
-                  {sidebarOpen && <span className="font-medium text-xs md:text-sm">{item.title}</span>}
+                  <item.icon className={cn('w-5 h-5 transition-transform duration-200 group-hover:scale-110 flex-shrink-0', isActive(item.url) ? 'text-amber-600' : 'text-gray-500')} />
+                  <span className="font-medium text-sm">{item.title}</span>
                 </Link>
               </li>
             ))}
           </ul>
         </nav>
 
-        <div className="border-t border-yellow-100/50 p-2 md:p-4 flex-shrink-0">
+        <div className="border-t border-yellow-100/50 p-4 flex-shrink-0">
           {user && (
-            <div className="space-y-2">
-              {sidebarOpen ? (
-                <>
-                  <div className="flex items-center gap-2 md:gap-3 px-1 md:px-2">
-                    <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center text-white font-semibold shadow-md flex-shrink-0 text-sm md:text-base">
-                      {user.name?.[0]?.toUpperCase() || 'M'}
-                    </div>
-                    <div className="flex-1 min-w-0 hidden sm:block">
-                      <p className="font-semibold text-gray-900 text-xs md:text-sm truncate">{user.name || 'Mentor'}</p>
-                      <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                    </div>
-                  </div>
-                  <div className="relative group mt-2">
-                    <div className="flex flex-col items-center justify-center bg-gradient-to-br from-gray-100 via-yellow-50 to-amber-100 rounded-xl px-4 py-2 shadow text-gray-900 border border-yellow-200 hover:border-yellow-400 transition-all duration-200 cursor-pointer">
-                      <span className="font-extrabold text-lg tracking-tight drop-shadow-sm">{user.tokens ?? 0}</span>
-                      <span className="text-base font-bold text-amber-700">Tokens</span>
-                      {tokenCycleStatus === 'pending' && (
-                        <div className="mt-1 w-full space-y-1">
-                          {daysRemainingInCycle !== null && (
-                            <span className="text-[11px] font-medium text-amber-700 text-center block">
-                              Replenishes in {daysRemainingInCycle} day{daysRemainingInCycle !== 1 ? 's' : ''}
-                            </span>
-                          )}
-                          {showFeedbackNudge && (
-                            <span className="text-[11px] font-semibold text-orange-600 text-center block">
-                              Fill feedback form to recover token
-                            </span>
-                          )}
-                        </div>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 px-1">
+                <div className="w-9 h-9 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center text-white font-semibold shadow-md flex-shrink-0 text-sm">
+                  {user.name?.[0]?.toUpperCase() || 'M'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 text-sm truncate">{user.name || 'Mentor'}</p>
+                  <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                </div>
+              </div>
+
+              <div className="relative group">
+                <div className="flex flex-col items-center justify-center bg-gradient-to-br from-gray-100 via-yellow-50 to-amber-100 rounded-xl px-4 py-2 shadow text-gray-900 border border-yellow-200 hover:border-yellow-400 transition-all duration-200 cursor-pointer">
+                  <span className="font-extrabold text-lg tracking-tight">{user.tokens ?? 0}</span>
+                  <span className="text-sm font-bold text-amber-700">Tokens</span>
+                  {tokenCycleStatus === 'pending' && (
+                    <div className="mt-1 w-full space-y-0.5">
+                      {daysRemainingInCycle !== null && (
+                        <span className="text-[11px] font-medium text-amber-700 text-center block">
+                          Replenishes in {daysRemainingInCycle} day{daysRemainingInCycle !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {showFeedbackNudge && (
+                        <span className="text-[11px] font-semibold text-orange-600 text-center block">
+                          Fill feedback to recover token
+                        </span>
                       )}
                     </div>
-                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50">
-                      {tokenCycleStatus === 'pending'
-                        ? showFeedbackNudge
-                          ? `Active cycle: Submit your feedback form to unlock token replenishment.`
-                          : `Active cycle: Token replenishes in ${daysRemainingInCycle ?? '?'} day(s).`
-                        : 'This token is for requesting meetings'}
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleLogout}
-                    className="w-full justify-start gap-2 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors text-xs md:text-sm mt-2"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    Logout
-                  </Button>
-                </>
-              ) : (
-                <div className="flex flex-col items-center gap-2">
-                  <div className="relative group mt-2 w-full flex flex-col items-center justify-center">
-                    <div className="flex flex-col items-center justify-center bg-gradient-to-br from-gray-100 via-yellow-50 to-amber-100 rounded-xl px-4 py-2 shadow text-gray-900 border border-yellow-200 hover:border-yellow-400 transition-all duration-200 cursor-pointer">
-                      <span className="font-extrabold text-lg tracking-tight drop-shadow-sm">{user.tokens ?? 0}</span>
-                      <span className="text-base font-bold text-amber-700">Tokens</span>
-                    </div>
-                  </div>
-                  <button onClick={handleLogout} className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-red-50 transition-colors" title="Logout">
-                    <LogOut className="w-5 h-5 text-red-600" />
-                  </button>
+                  )}
                 </div>
-              )}
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-56 px-3 py-2 rounded-lg bg-gray-900 text-white text-xs font-medium shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">
+                  {tokenCycleStatus === 'pending'
+                    ? showFeedbackNudge ? 'Submit feedback to unlock token replenishment.' : `Token replenishes in ${daysRemainingInCycle ?? '?'} day(s).`
+                    : 'This token is for requesting meetings'}
+                </div>
+              </div>
+
+              <Button variant="outline" size="sm" onClick={handleLogout} className="w-full justify-start gap-2 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors text-sm">
+                <LogOut className="w-4 h-4" />Logout
+              </Button>
             </div>
           )}
         </div>
       </aside>
 
+      {/* Main content */}
       <main
-        className={cn(
-          'flex-1 flex flex-col min-w-0 transition-all duration-300',
-          sidebarOpen ? 'ml-64' : 'ml-24 md:ml-28'
-        )}
+        className="flex-1 flex flex-col min-w-0 min-h-screen min-h-dvh"
+        style={{ backgroundColor: APP_BG }}
       >
+        {/* Top bar */}
+        <header
+          className="sticky top-0 z-30 border-b border-yellow-100/50 px-4 py-3 flex items-center gap-3 shadow-sm"
+          style={{ backgroundColor: 'rgba(255,253,244,0.85)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+        >
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-yellow-50 transition-colors text-gray-600"
+            aria-label="Open navigation"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-lg flex items-center justify-center shadow-sm">
+              <Users className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-bold text-base text-gray-900 hidden sm:block">Connext</span>
+            <span className="text-xs text-gray-400 font-medium hidden sm:block">· Mentor Portal</span>
+          </div>
+
+          {user && (
+            <div className="ml-auto flex items-center gap-2">
+              <div className="flex items-center gap-1.5 bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-full px-3 py-1 shadow-sm">
+                <span className="font-extrabold text-sm text-amber-700">{user.tokens ?? 0}</span>
+                <span className="text-xs font-medium text-amber-600">tokens</span>
+              </div>
+              <div className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-md">
+                {user.name?.[0]?.toUpperCase() || 'M'}
+              </div>
+            </div>
+          )}
+        </header>
+
         {isPending && (
-          <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div
+            className="fixed inset-0 flex items-center justify-center z-50"
+            style={{ backgroundColor: 'rgba(255,253,244,0.8)', backdropFilter: 'blur(4px)' }}
+          >
             <div className="flex flex-col items-center gap-3">
               <Loader2 className="w-8 h-8 animate-spin text-amber-600" />
               <p className="text-sm font-medium text-gray-600">Loading...</p>
             </div>
           </div>
         )}
-        <div className="flex-1 overflow-auto">
+
+        <div className="flex-1 overflow-auto" style={{ backgroundColor: APP_BG }}>
           {children}
         </div>
       </main>

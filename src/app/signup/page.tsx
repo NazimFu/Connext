@@ -13,6 +13,8 @@ import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { Separator } from "@/components/ui/separator"
 import { Eye, EyeOff } from "lucide-react"
 
+export const dynamic = 'force-dynamic';
+
 export default function SignupPage() {
   const router = useRouter();
   const { signup } = useAuth();

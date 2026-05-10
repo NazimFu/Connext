@@ -7,6 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Clock, CheckCircle2, Mail, Loader2 } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+
 export default function VerificationPendingPage() {
     const { user, isAuthLoading, logout } = useAuth();
     const router = useRouter();
