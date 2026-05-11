@@ -36,16 +36,14 @@ export default function RootLayout({
         */}
         <style dangerouslySetInnerHTML={{ __html: `
         html {
-          overflow-x: clip;        /* horizontal only */
+          overflow-x: hidden;        /* horizontal only */
         }
         html, body {
           background-color: #fffdf4 !important;
-          min-height: 100%;
-          min-height: 100dvh;
-          /* NEVER set overflow: hidden or height: 100% on both — it kills scroll */
         }
         body {
           overscroll-behavior-y: none;
+          min-height: 100dvh;
         }
       `}} />
       </head>

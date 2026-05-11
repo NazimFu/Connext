@@ -171,7 +171,7 @@ export default function Home() {
             FIX: overflow-x ONLY — never use plain overflow:hidden on html
             as it kills vertical scrolling on many browsers.
           */
-          overflow-x: clip;
+          overflow-x: hidden;
         }
         body {
           font-family: 'DM Sans', sans-serif;
