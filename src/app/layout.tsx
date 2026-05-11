@@ -15,7 +15,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="light" suppressHydrationWarning>
+    <html lang="en" className="light preload" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
@@ -27,6 +27,14 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap"
           rel="stylesheet"
         />
+        <link
+          href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap"
+          rel="stylesheet"
+        />
+        <link
+          href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&display=swap"
+          rel="stylesheet"
+        />
         {/*
           Inline critical style — injected before any JS loads so there is NEVER
           a frame where the background is white on mobile.
@@ -34,16 +42,48 @@ export default function RootLayout({
           used throughout the app, so the flash colour blends in rather than
           jarring against it.
         */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                var doc = document.documentElement;
+                var hydrationTimeout;
+                var onHydrate = function () {
+                  doc.classList.remove('preload');
+                  doc.classList.add('ready');
+                  clearTimeout(hydrationTimeout);
+                  window.removeEventListener('__react-hydration-done', onHydrate);
+                };
+                window.addEventListener('__react-hydration-done', onHydrate);
+                hydrationTimeout = setTimeout(onHydrate, 2500);
+              })();
+            `,
+          }}
+        />
         <style dangerouslySetInnerHTML={{ __html: `
+        html.preload body {
+          visibility: hidden;
+          opacity: 0;
+          pointer-events: none;
+        }
+        html.ready body {
+          visibility: visible;
+          opacity: 1;
+          pointer-events: auto;
+          transition: opacity 0.1s ease;
+        }
         html {
-          overflow-x: hidden;        /* horizontal only */
+          overflow-x: clip;
+          overflow-y: auto;
         }
         html, body {
+          margin: 0;
           background-color: #fffdf4 !important;
+          min-height: 100%;
         }
         body {
-          overscroll-behavior-y: none;
-          min-height: 100dvh;
+          overflow-y: visible;
+          overscroll-behavior-y: auto;
         }
       `}} />
       </head>

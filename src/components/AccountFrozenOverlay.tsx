@@ -7,13 +7,15 @@
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { ShieldAlert, Mail, LogOut } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 export function AccountFrozenOverlay() {
   const { logout } = useAuth();
+  const router = useRouter();
 
   const handleLogout = async () => {
     await logout();
-    window.location.href = '/';
+    router.push('/');
   };
 
   return (

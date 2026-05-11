@@ -139,9 +139,7 @@ export default function ForgotPasswordPage() {
         <CardHeader className="space-y-4 text-center pb-6">
           <div className="mx-auto">
             <Link href="/">
-              <h1 className="text-3xl font-bold font-headline bg-gradient-to-r from-yellow-400 to-amber-500 bg-clip-text text-transparent cursor-pointer hover:from-yellow-500 hover:to-amber-600 transition-all">
-                CONNEXT
-              </h1>
+              <img src="/name.jpg" alt="Connext" className="h-12 w-auto mx-auto cursor-pointer rounded-xl" />
             </Link>
           </div>
           <CardTitle className="text-2xl font-headline text-gray-900">

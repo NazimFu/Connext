@@ -11,6 +11,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
 
+    // Signal React hydration is complete to unblock page visibility
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('__react-hydration-done'));
+        }
+    }, []);
+
     // Single useEffect — all hooks must come before any early returns
     useEffect(() => {
         // Skip all redirect logic for homepage and public paths

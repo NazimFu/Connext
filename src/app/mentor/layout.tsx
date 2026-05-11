@@ -146,11 +146,9 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
       >
         <div className="border-b border-yellow-100/50 p-5 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-xl flex items-center justify-center shadow-lg shadow-yellow-500/20">
-              <Users className="w-5 h-5 text-white" />
-            </div>
+            <img src="/logo.jpeg" alt="Connext logo" className="h-10 w-10 rounded-xl object-contain bg-white shadow-lg shadow-yellow-500/20" />
             <div>
-              <h2 className="font-bold text-lg text-gray-900 leading-none">Connext</h2>
+              <img src="/name.jpg" alt="Connext" className="h-5 w-auto block leading-none rounded-lg" />
               <p className="text-xs text-gray-500 mt-0.5">Mentor Portal</p>
             </div>
           </div>
@@ -252,10 +250,8 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
           </button>
 
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-lg flex items-center justify-center shadow-sm">
-              <Users className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-bold text-base text-gray-900 hidden sm:block">Connext</span>
+            <img src="/logo.jpeg" alt="Connext logo" className="h-7 w-7 rounded-lg object-contain bg-white shadow-sm" />
+            <img src="/name.jpg" alt="Connext" className="h-4 w-auto hidden sm:block rounded-md" />
             <span className="text-xs text-gray-400 font-medium hidden sm:block">· Mentor Portal</span>
           </div>
 

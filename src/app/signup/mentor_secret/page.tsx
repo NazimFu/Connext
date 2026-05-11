@@ -99,9 +99,7 @@ export default function MentorSignupPage() {
       <Card className="w-full max-w-md border-amber-100/50 shadow-xl">
         <CardHeader className="space-y-4 text-center pb-6">
           <div className="mx-auto">
-            <h1 className="text-3xl font-bold font-headline bg-gradient-to-r from-yellow-400 to-amber-500 bg-clip-text text-transparent mb-2">
-              CONNEXT
-            </h1>
+            <img src="/name.jpg" alt="Connext" className="h-12 w-auto mx-auto mb-2 rounded-xl" />
           </div>
           <CardTitle className="text-2xl font-headline text-gray-900">Become a Mentor</CardTitle>
           <CardDescription className="text-gray-600">

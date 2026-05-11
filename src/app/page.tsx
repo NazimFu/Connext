@@ -27,8 +27,12 @@ const FAQ_ITEMS = [
     a: "Yes, all mentors go through a vetting process to ensure quality and credibility.",
   },
   {
-    q: "How much does a session cost?",
-    a: "Pricing varies by mentor. You can view rates on each mentor's profile before booking.",
+    q: "Do I have to pay for a session?",
+    a: "No, all mentoring sessions are free. However, sessions are subject to the mentor’s availability."
+  },
+  {
+    q: "How often can I request a mentoring session?",
+    a: "You can request a session at the earliest one week before the meeting date. After a token is used, there is a 30-day cooldown period. Once you submit the feedback form and the cooldown period is over, your token will be returned and you can make a new request."
   },
   {
     q: "Can I become a mentor?",
@@ -47,6 +51,7 @@ export default function Home() {
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   const heroRef = useRef<HTMLElement>(null);
   const mentorsPerPage = 4;
+  const isPlaceholderMentor = (name: string) => /^\s*test\s*$/i.test(name);
 
   useEffect(() => {
     const fetchMentors = async () => {
@@ -55,9 +60,12 @@ export default function Home() {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         if (data.success && data.mentors && data.mentors.length > 0) {
-          setFeaturedMentors(data.mentors);
+          const sanitizedMentors = data.mentors.filter(
+            (mentor: FeaturedMentor) => mentor?.name && !isPlaceholderMentor(mentor.name)
+          );
+          setFeaturedMentors(sanitizedMentors);
           const allPhotos: { url: string; name: string }[] = [];
-          data.mentors.forEach((mentor: FeaturedMentor) => {
+          sanitizedMentors.forEach((mentor: FeaturedMentor) => {
             if (Array.isArray(mentor.institution_photo)) {
               mentor.institution_photo.forEach((photo) => {
                 const url = typeof photo === 'string' ? photo : photo?.url;
@@ -147,8 +155,6 @@ export default function Home() {
   return (
     <>
       <style jsx global>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Serif+Display:ital@0;1&display=swap');
-
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
@@ -167,21 +173,11 @@ export default function Home() {
 
         html {
           scroll-behavior: smooth;
-          /*
-            FIX: overflow-x ONLY — never use plain overflow:hidden on html
-            as it kills vertical scrolling on many browsers.
-          */
-          overflow-x: hidden;
         }
         body {
           font-family: 'DM Sans', sans-serif;
           color: var(--black);
           background: var(--white);
-          /*
-            overflow-x:hidden on body is safe (unlike on html) and is the
-            standard cross-browser way to prevent horizontal scroll.
-          */
-          overflow-x: hidden;
           -webkit-font-smoothing: antialiased;
           -moz-osx-font-smoothing: grayscale;
         }
@@ -194,7 +190,8 @@ export default function Home() {
             bleed horizontally (glows, ::before circles) WITHOUT touching
             vertical scroll at all.
           */
-          overflow-x: hidden;
+          overflow-x: clip;
+          overflow-y: visible;
         }
 
         .scroll-reveal {
@@ -278,14 +275,16 @@ export default function Home() {
         .hero-mentors-bg {
           background: linear-gradient(180deg, #FFFDF4 0%, var(--surface-2) 40%, var(--surface-3) 75%, #ffffff 100%);
           /* clip horizontal bleed from child glows without touching vertical scroll */
-          overflow-x: hidden;
+          overflow-x: clip;
+          overflow-y: visible;
         }
 
         /* ─── HERO SECTION ─── */
         .hero-section {
           padding: 0;
           background: transparent;
-          overflow-x: hidden;
+          overflow-x: clip;
+          overflow-y: visible;
         }
         /*
           FIX: Constrain the decorative ::before circle so it can never push
@@ -711,7 +710,7 @@ export default function Home() {
       {/* ─── FLOATING NAV ─── */}
       <nav className={`floating-nav ${floatingNav ? 'visible' : ''}`} aria-label="Floating navigation">
         <Link href="/" className="floating-nav-logo">
-          Connext<span className="floating-nav-logo-dot" />
+          <img src="/logo.jpeg" alt="Connext logo" style={{ height: '28px', width: 'auto', display: 'block' }} />
         </Link>
         <ul className="floating-nav-links">
           <li><button onClick={() => scrollToSection('home')}>Home</button></li>
@@ -733,8 +732,7 @@ export default function Home() {
           <div style={{ position: 'relative' }}>
             <nav className="hero-nav" aria-label="Primary navigation">
               <Link href="/" className="hero-nav-logo">
-                Connext
-                <span className="hero-nav-logo-dot" />
+                <img src="/logo.jpeg" alt="Connext logo" style={{ height: '34px', width: 'auto', display: 'block' }} />
                 <span className="hero-nav-badge">Beta</span>
               </Link>
               <ul className="hero-nav-links">
@@ -808,7 +806,7 @@ export default function Home() {
                         <div key={idx} className="partner-cell" title={photo.name}>
                           <img
                             src={getGoogleDriveImageUrl(photo.url)}
-                            alt={photo.name}
+                            alt="Institution logo"
                             loading="lazy"
                             onError={(e) => {
                               e.currentTarget.src = 'https://placehold.co/120x60/e5e7eb/6b7280?text=Logo';
@@ -964,7 +962,7 @@ export default function Home() {
           <div className="footer-top">
             <div>
               <Link href="/" className="footer-logo">
-                Connext<span className="footer-logo-dot" />
+                <img src="/logo.jpeg" alt="Connext logo" style={{ height: '26px', width: 'auto', display: 'block' }} />
               </Link>
               <p className="footer-tagline">
                 Connecting mentors and mentees to build successful careers and lasting professional relationships.
