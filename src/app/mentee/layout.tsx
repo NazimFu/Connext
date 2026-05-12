@@ -162,7 +162,7 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
             <img src="/logo.jpeg" alt="Connext logo" className="h-10 w-10 rounded-xl object-contain bg-white shadow-lg shadow-yellow-500/20" />
             <div>
               <img src="/name.jpg" alt="Connext" className="h-5 w-auto block leading-none rounded-lg" />
-              <p className="text-xs text-gray-500 mt-0.5">Connect &amp; Grow</p>
+              <p className="text-xs text-gray-500 mt-0.5">&nbsp;&nbsp;&nbsp;Mentee Portal</p>
             </div>
           </div>
           <button
