@@ -10,11 +10,11 @@
     },
     {
       "path": "/api/cron/send-meeting-reminders",
-      "schedule": "* * * * *"
+      "schedule": "0 0 * * *"
     },
     {
       "path": "/api/meetings/send-feedback",
-      "schedule": "* * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
