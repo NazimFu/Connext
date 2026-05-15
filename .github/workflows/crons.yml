@@ -1,0 +1,44 @@
+name: Scheduled Jobs
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # Daily at midnight UTC
+    - cron: '5 0 * * *'   # Daily at 12:05 AM UTC
+  workflow_dispatch:        # Manual trigger for testing
+
+jobs:
+  cleanup-expired-requests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run cleanup
+        run: |
+          curl -s -X GET \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/cleanup-expired-requests"
+
+  evaluate-token-cycles:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate token cycles
+        run: |
+          curl -s -X GET \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/evaluate-token-cycles"
+
+  send-meeting-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send reminders
+        run: |
+          curl -s -X GET \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/send-meeting-reminders"
+
+  send-feedback-forms:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send feedback forms
+        run: |
+          curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/meetings/send-feedback"
