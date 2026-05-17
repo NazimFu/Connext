@@ -95,6 +95,10 @@ const syncPendingTokenCycle = (
     return;
   }
 
+  user.token_cycle.meetingId = meetingId;
+  user.token_cycle.meetingDate = meeting.date;
+  user.token_cycle.meetingTime = meeting.time;
+
   // Check if feedback submission is within acceptable timing window (2 hours after meeting)
   const timezone = user.timezone || 'UTC';
   const feedbackCheckResult = canAcceptFeedbackSubmission(user.token_cycle, timezone, new Date(submittedAt));
@@ -104,9 +108,6 @@ const syncPendingTokenCycle = (
     throw new Error(`Feedback submission rejected: ${feedbackCheckResult.reason}`);
   }
 
-  user.token_cycle.meetingId = meetingId;
-  user.token_cycle.meetingDate = meeting.date;
-  user.token_cycle.meetingTime = meeting.time;
   user.token_cycle.feedbackSubmittedAt = submittedAt;
   user.token_cycle.feedbackValid = true;
   user.token_cycle.feedbackVerificationSource = 'google-form-webhook';
@@ -307,7 +308,7 @@ export async function POST(request: NextRequest) {
         // If the feedback is too early, reject the webhook
         if (tokenCycleError.message?.includes('Feedback submission rejected')) {
           return NextResponse.json(
-            { message: 'Feedback is too early. Please submit after the meeting + 2 hours.' },
+            { message: 'Feedback is too early. Please submit after the meeting + 2 hours...' },
             { status: 400 }
           );
         }
