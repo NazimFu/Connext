@@ -2,44 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { sendEmail } from '@/lib/email';
 import { clampToken } from '@/lib/token-cycle';
-import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
-
-const MY_TIMEZONE = 'Asia/Kuala_Lumpur';
+import { MY_TZ } from '@/lib/timezone';
+import { getMalaysiaTodayKey, getReminderTargetDateKey } from '@/lib/cron-meeting-dates';
 
 // Deadlines (in days before meeting)
 const ACCEPTANCE_DEADLINE_DAYS = 3;
 const ACCEPTANCE_REMINDER_DAYS = 5;
 const MEETING_REMINDER_DAYS = 1;
-
-// Allow a broad catch-up window so a missed cron run still catches the reminder.
-const ACCEPTANCE_REMINDER_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
-const MEETING_REMINDER_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-
-function parseMeetingDateTimeMY(date: string, time: string): Date | null {
-  try {
-    let hours = 0;
-    let minutes = 0;
-
-    if (time.includes('AM') || time.includes('PM')) {
-      const [rawTime, period] = time.split(' ');
-      const [h, m] = rawTime.split(':').map(Number);
-      if (Number.isNaN(h) || Number.isNaN(m)) return null;
-      hours = period === 'PM' && h !== 12 ? h + 12 : period === 'AM' && h === 12 ? 0 : h;
-      minutes = m;
-    } else {
-      const [h, m] = time.split(':').map(Number);
-      if (Number.isNaN(h) || Number.isNaN(m)) return null;
-      hours = h;
-      minutes = m;
-    }
-
-    const localStr = `${date}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
-    const utc = fromZonedTime(localStr, MY_TIMEZONE);
-    return Number.isNaN(utc.getTime()) ? null : utc;
-  } catch {
-    return null;
-  }
-}
+const MY_TIMEZONE = MY_TZ;
 
 async function refundTokenToRequester(
   requesterIdentifier: string,
@@ -188,6 +158,7 @@ export async function GET(req: NextRequest) {
   console.log('Container:', process.env.COSMOS_DB_CONTAINER_ID);
 
   const now = new Date();
+  const todayKey = getMalaysiaTodayKey(now);
   const mentorContainer = database.container('mentor');
   const menteeContainer = database.container('mentee');
   const timezoneCache = new Map<string, string>();
@@ -242,11 +213,9 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      const meetingDateTime = parseMeetingDateTimeMY(meeting.date, meeting.time);
-      if (!meetingDateTime) continue;
-
-      const msUntilMeeting = meetingDateTime.getTime() - now.getTime();
-      const daysUntilMeeting = msUntilMeeting / (24 * 60 * 60 * 1000);
+      const acceptanceReminderTargetKey = getReminderTargetDateKey(meeting.date, ACCEPTANCE_REMINDER_DAYS);
+      const meetingReminderTargetKey = getReminderTargetDateKey(meeting.date, MEETING_REMINDER_DAYS);
+      const acceptanceDeadlineKey = getReminderTargetDateKey(meeting.date, ACCEPTANCE_DEADLINE_DAYS);
 
       console.log('Checking meeting:', {
         meetingId: meeting.meetingId,
@@ -260,14 +229,14 @@ export async function GET(req: NextRequest) {
         acceptanceReminderSentAt: meeting.acceptanceReminderSentAt,
         reminderSentAt: meeting.reminderSentAt,
         feedbackSentAt: meeting.feedbackSentAt,
-        daysUntilMeeting,
+        todayKey,
+        acceptanceDeadlineKey,
+        acceptanceReminderTargetKey,
+        meetingReminderTargetKey,
       });
 
-      // Meeting is already past — skip (cleanup-expired-meetings handles these)
-      if (daysUntilMeeting <= 0) continue;
-
       // ─── Feature 4: Auto-cancel pending meetings past the 3-day deadline ───
-      if (meeting.decision === 'pending' && daysUntilMeeting <= ACCEPTANCE_DEADLINE_DAYS) {
+      if (meeting.decision === 'pending' && acceptanceDeadlineKey && todayKey >= acceptanceDeadlineKey) {
         mentor.scheduling[i].decision = 'declined';
         mentor.scheduling[i].scheduled_status = 'cancelled';
         mentor.scheduling[i].updated_at = now.toISOString();
@@ -284,44 +253,27 @@ export async function GET(req: NextRequest) {
         hasChanges = true;
         autoCancelledMeetings.push(meeting);
         autoCancelledCount++;
-        console.log(`🚫 Auto-cancelled meeting ${meeting.meetingId} — ${daysUntilMeeting.toFixed(1)}d until meeting`);
+        console.log(`🚫 Auto-cancelled meeting ${meeting.meetingId} — deadline date ${acceptanceDeadlineKey}`);
         continue;
       }
 
       // ─── Feature 3: Acceptance reminder to mentor ~5 days before ───
-      const acceptanceReminderTargetMs = meetingDateTime.getTime() - ACCEPTANCE_REMINDER_DAYS * 24 * 60 * 60 * 1000;
-      
-      // Log all condition checks for acceptance reminder
-      const acceptanceConditions = {
-        decision_is_pending: meeting.decision === 'pending',
-        days_until_meeting_gt_deadline: daysUntilMeeting > ACCEPTANCE_DEADLINE_DAYS,
-        now_gte_target: now.getTime() >= acceptanceReminderTargetMs,
-        now_lt_target_plus_window: now.getTime() < acceptanceReminderTargetMs + ACCEPTANCE_REMINDER_WINDOW_MS,
-        force_or_not_sent: forceReminder || !meeting.acceptanceReminderSentAt,
-      };
-      
+      const shouldSendAcceptanceReminder =
+        meeting.decision === 'pending' &&
+        acceptanceReminderTargetKey === todayKey &&
+        (forceReminder || !meeting.acceptanceReminderSentAt);
+
       console.log(`🔍 Checking acceptance reminder for ${meeting.meetingId}:`, {
         decision: meeting.decision,
-        daysUntilMeeting,
-        ACCEPTANCE_DEADLINE_DAYS,
-        acceptanceReminderTargetMs: new Date(acceptanceReminderTargetMs).toISOString(),
-        now: now.toISOString(),
-        nowMs: now.getTime(),
-        window_end: new Date(acceptanceReminderTargetMs + ACCEPTANCE_REMINDER_WINDOW_MS).toISOString(),
+        todayKey,
+        acceptanceReminderTargetKey,
         acceptanceReminderSentAt: meeting.acceptanceReminderSentAt,
-        conditions: acceptanceConditions,
-        all_pass: Object.values(acceptanceConditions).every(v => v),
+        shouldSendAcceptanceReminder,
       });
-      
-      if (
-        meeting.decision === 'pending' &&
-        daysUntilMeeting > ACCEPTANCE_DEADLINE_DAYS &&
-        now.getTime() >= acceptanceReminderTargetMs &&
-        now.getTime() < acceptanceReminderTargetMs + ACCEPTANCE_REMINDER_WINDOW_MS &&
-        (forceReminder || !meeting.acceptanceReminderSentAt)
-      ) {
+
+      if (shouldSendAcceptanceReminder) {
         try {
-          const mentorTimezone = mentor.timezone || meeting.mentor_timezone || MY_TIMEZONE;
+          const mentorTimezone = mentor.timezone || meeting.mentor_timezone || MY_TZ;
           console.log(`✉️ Sending acceptance reminder to ${meeting.mentor_email}...`);
           await sendEmail({
             to: meeting.mentor_email,
@@ -352,21 +304,18 @@ export async function GET(req: NextRequest) {
       }
 
       // ─── Feature 2: 1-day reminder (accepted meetings) ───
-      const meetingReminderTargetMs = meetingDateTime.getTime() - MEETING_REMINDER_DAYS * 24 * 60 * 60 * 1000;
-      if (
+      const shouldSendMeetingReminder =
         meeting.decision === 'accepted' &&
-        meeting.scheduled_status === 'upcoming' &&
-        daysUntilMeeting > 0 &&
-        now.getTime() >= meetingReminderTargetMs &&
-        now.getTime() < meetingReminderTargetMs + MEETING_REMINDER_WINDOW_MS &&
+        meetingReminderTargetKey === todayKey &&
         !meeting.reminderSentAt &&
-        !processedMeetingReminderIds.has(meeting.meetingId)
-      ) {
+        !processedMeetingReminderIds.has(meeting.meetingId);
+
+      if (shouldSendMeetingReminder) {
         let reminderOk = false;
         try {
           const menteeTimezone = meeting.mentee_timezone || timezoneCache.get(meeting.menteeUID) || await resolveUserTimezone(meeting.menteeUID, menteeContainer, mentorContainer);
           timezoneCache.set(meeting.menteeUID, menteeTimezone);
-          const mentorTimezone = mentor.timezone || meeting.mentor_timezone || MY_TIMEZONE;
+          const mentorTimezone = mentor.timezone || meeting.mentor_timezone || MY_TZ;
           await sendEmail({
             to: meeting.mentee_email,
             subject: 'Reminder: Your Mentorship Session is Tomorrow – CONNEXT',

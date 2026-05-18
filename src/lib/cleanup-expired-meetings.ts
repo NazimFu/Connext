@@ -1,16 +1,13 @@
 import { database } from './cosmos';
 import { clampToken } from './token-cycle';
 import { sendEmail } from './email';
+import { getMalaysiaTodayKey, getReminderTargetDateKey } from './cron-meeting-dates';
 
-// Keep pending requests visible for a while after scheduled start time
-// so mentors still have time to accept/reject near-time requests.
-// Testing config: auto-expire unresolved pending requests after 30 minutes.
-// Production target: 3 * 24 * 60 * 60 * 1000 (3 days).
-const PENDING_REQUEST_EXPIRY_MS = 30 * 60 * 1000;
+const PENDING_REQUEST_DEADLINE_DAYS = 3;
 
 /**
  * Cleanup expired pending meeting requests
- * Removes meetings that have passed their scheduled time and refunds tokens
+ * Removes pending requests once the 3-day acceptance deadline has passed and refunds tokens
  */
 export async function cleanupExpiredMeetings(): Promise<{
   expiredCount: number;
@@ -26,6 +23,7 @@ export async function cleanupExpiredMeetings(): Promise<{
 
   // Get current time
   const now = new Date();
+  const todayKey = getMalaysiaTodayKey(now);
   console.log(`Current time: ${now.toISOString()}`);
 
   // Process all mentors
@@ -48,25 +46,9 @@ export async function cleanupExpiredMeetings(): Promise<{
       // Only process pending meetings
       if (meeting.decision === 'pending' && meeting.scheduled_status === 'pending') {
         try {
-          // Parse meeting date and time - handle both formats
-          let meetingDateTime: Date;
-          
-          if (meeting.date.includes('/')) {
-            // DD/MM/YYYY format
-            const [day, month, year] = meeting.date.split('/').map(Number);
-            const [hours, minutes] = meeting.time.split(':').map(Number);
-            meetingDateTime = new Date(year, month - 1, day, hours, minutes);
-          } else {
-            // YYYY-MM-DD format
-            const [year, month, day] = meeting.date.split('-').map(Number);
-            const [hours, minutes] = meeting.time.split(':').map(Number);
-            meetingDateTime = new Date(year, month - 1, day, hours, minutes);
-          }
-          
-          // Expire only after grace window, not immediately at start time.
-          const expiresAt = new Date(meetingDateTime.getTime() + PENDING_REQUEST_EXPIRY_MS);
-          if (expiresAt < now) {
-            console.log(`⏰ Expired: ${meeting.meetingId} - ${meeting.date} ${meeting.time} (scheduled: ${meetingDateTime.toISOString()})`);
+          const deadlineKey = getReminderTargetDateKey(meeting.date, PENDING_REQUEST_DEADLINE_DAYS);
+          if (deadlineKey && todayKey >= deadlineKey) {
+            console.log(`⏰ Expired: ${meeting.meetingId} - ${meeting.date} ${meeting.time} (deadline: ${deadlineKey}, today: ${todayKey})`);
             expiredMeetings.push(meeting);
             mentor.scheduling.splice(i, 1);
             hasChanges = true;
