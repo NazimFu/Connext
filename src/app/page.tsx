@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
 import { useEffect, useState, useRef } from 'react';
+import { Instagram } from 'lucide-react';
 import { getGoogleDriveImageUrl } from '@/lib/utils';
 
 interface FeaturedMentor {
@@ -627,6 +628,12 @@ export default function Home() {
         .footer-col-links { list-style: none; display: flex; flex-direction: column; gap: 10px; }
         .footer-col-links a { font-size: 13.5px; color: rgba(255,255,255,0.65); text-decoration: none; transition: color 0.15s; font-weight: 300; }
         .footer-col-links a:hover { color: var(--white); }
+        .footer-social-placeholder {
+          display: inline-flex; align-items: center; gap: 8px; width: fit-content;
+          font-size: 13.5px; color: rgba(255,255,255,0.65); font-weight: 300;
+        }
+        .footer-social-icon { width: 16px; height: 16px; color: rgba(255,255,255,0.82); flex-shrink: 0; }
+        .footer-social-note { font-size: 11px; color: rgba(255,255,255,0.42); }
         .footer-bottom { display: flex; justify-content: space-between; align-items: center; padding-top: 28px; border-top: 1px solid rgba(255,255,255,0.08); }
         .footer-copy { font-size: 12.5px; color: rgba(255,255,255,0.45); font-weight: 300; }
         .footer-badge {
@@ -794,9 +801,7 @@ export default function Home() {
             </div>
 
             <div className="partners-wrap">
-              <div className="partners-label-row">
-                <div className="partners-label-line" />
-                <span className="partners-label-text">Trusted Partner Institutions</span>
+              <div className="partners-label-row" aria-hidden="true">
                 <div className="partners-label-line" />
               </div>
               <div className="partners-card">
@@ -982,6 +987,13 @@ export default function Home() {
               <ul className="footer-col-links">
                 <li><a href="mailto:contact@connext.com">contact@connext.com</a></li>
                 <li><a href="tel:+1234567890">+1 (234) 567-890</a></li>
+                <li>
+                  <span className="footer-social-placeholder" aria-label="Instagram link coming soon">
+                    <Instagram className="footer-social-icon" aria-hidden="true" />
+                    <span>Instagram</span>
+                    <span className="footer-social-note">coming soon</span>
+                  </span>
+                </li>
                 <li><a href="#">Privacy Policy</a></li>
                 <li><a href="#">Terms of Service</a></li>
               </ul>
