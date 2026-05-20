@@ -236,6 +236,12 @@ export async function GET(req: NextRequest) {
       });
 
       // ─── Feature 4: Auto-cancel pending meetings past the 3-day deadline ───
+      // Skip if already cancelled (cleanup may have already processed it)
+      if (meeting.scheduled_status === 'cancelled') {
+        console.log(`⏭️ Skipping meeting ${meeting.meetingId} — already cancelled`);
+        continue;
+      }
+      
       if (meeting.decision === 'pending' && acceptanceDeadlineKey && todayKey >= acceptanceDeadlineKey) {
         mentor.scheduling[i].decision = 'declined';
         mentor.scheduling[i].scheduled_status = 'cancelled';

@@ -2,6 +2,7 @@ import { database } from './cosmos';
 import { clampToken } from './token-cycle';
 import { sendEmail } from './email';
 import { getMalaysiaTodayKey, getReminderTargetDateKey } from './cron-meeting-dates';
+import { toZonedTime } from 'date-fns-tz';
 
 const PENDING_REQUEST_DEADLINE_DAYS = 3;
 
@@ -40,7 +41,7 @@ export async function cleanupExpiredMeetings(): Promise<{
     const expiredMeetings: any[] = [];
 
     // Find expired pending meetings
-    for (let i = mentor.scheduling.length - 1; i >= 0; i--) {
+    for (let i = 0; i < mentor.scheduling.length; i++) {
       const meeting = mentor.scheduling[i];
       
       // Only process pending meetings
@@ -50,7 +51,19 @@ export async function cleanupExpiredMeetings(): Promise<{
           if (deadlineKey && todayKey >= deadlineKey) {
             console.log(`⏰ Expired: ${meeting.meetingId} - ${meeting.date} ${meeting.time} (deadline: ${deadlineKey}, today: ${todayKey})`);
             expiredMeetings.push(meeting);
-            mentor.scheduling.splice(i, 1);
+            
+            // Mark as cancelled instead of deleting
+            mentor.scheduling[i].scheduled_status = 'cancelled';
+            mentor.scheduling[i].cancel_info = {
+              cancelledBy: 'system',
+              role: 'system',
+              reason: 'Mentor did not accept the request within the 3-day acceptance deadline.',
+              cancelledAt: now.toISOString(),
+              tokenStatus: 'auto-replenished',
+              reviewedBy: null,
+              reviewedAt: null,
+              reviewNotes: null,
+            };
             hasChanges = true;
             expiredCount++;
           }
@@ -63,7 +76,7 @@ export async function cleanupExpiredMeetings(): Promise<{
     // Save changes if any
     if (hasChanges) {
       await mentorContainer.item(mentor.id, mentor.id).replace(mentor);
-      console.log(`✅ Removed ${expiredMeetings.length} expired meetings from mentor ${mentor.mentor_name || mentor.mentorUID}`);
+      console.log(`✅ Marked ${expiredMeetings.length} expired meetings as cancelled in mentor ${mentor.mentor_name || mentor.mentorUID}`);
 
       // Refund tokens to requesters
       for (const expiredMeeting of expiredMeetings) {
@@ -84,14 +97,24 @@ export async function cleanupExpiredMeetings(): Promise<{
             if (menteeResource) {
               requester = menteeResource;
               
-              // Also remove the expired meeting from mentee's scheduling
+              // Also mark as cancelled on mentee's scheduling
               if (requester.scheduling && Array.isArray(requester.scheduling)) {
                 const menteeSchedulingIndex = requester.scheduling.findIndex(
                   (m: any) => m.meetingId === expiredMeeting.meetingId
                 );
                 if (menteeSchedulingIndex !== -1) {
-                  requester.scheduling.splice(menteeSchedulingIndex, 1);
-                  console.log(`🗑️ Removed expired meeting from mentee ${menteeId}`);
+                  requester.scheduling[menteeSchedulingIndex].scheduled_status = 'cancelled';
+                  requester.scheduling[menteeSchedulingIndex].cancel_info = {
+                    cancelledBy: 'system',
+                    role: 'system',
+                    reason: 'Mentor did not accept the request within the 3-day acceptance deadline.',
+                    cancelledAt: now.toISOString(),
+                    tokenStatus: 'auto-replenished',
+                    reviewedBy: null,
+                    reviewedAt: null,
+                    reviewNotes: null,
+                  };
+                  console.log(`✅ Marked expired meeting as cancelled on mentee ${menteeId}`);
                 }
               }
             }
@@ -110,14 +133,24 @@ export async function cleanupExpiredMeetings(): Promise<{
                 requester = mentorRequesters[0];
                 isRequesterMentor = true;
                 
-                // Also remove the expired meeting from mentor's scheduling
+                // Also mark as cancelled on mentor-as-mentee's scheduling
                 if (requester.scheduling && Array.isArray(requester.scheduling)) {
                   const mentorSchedulingIndex = requester.scheduling.findIndex(
                     (m: any) => m.meetingId === expiredMeeting.meetingId
                   );
                   if (mentorSchedulingIndex !== -1) {
-                    requester.scheduling.splice(mentorSchedulingIndex, 1);
-                    console.log(`🗑️ Removed expired meeting from mentor-as-mentee ${requester.mentorUID}`);
+                    requester.scheduling[mentorSchedulingIndex].scheduled_status = 'cancelled';
+                    requester.scheduling[mentorSchedulingIndex].cancel_info = {
+                      cancelledBy: 'system',
+                      role: 'system',
+                      reason: 'Mentor did not accept the request within the 3-day acceptance deadline.',
+                      cancelledAt: now.toISOString(),
+                      tokenStatus: 'auto-replenished',
+                      reviewedBy: null,
+                      reviewedAt: null,
+                      reviewNotes: null,
+                    };
+                    console.log(`✅ Marked expired meeting as cancelled on mentor-as-mentee ${requester.mentorUID}`);
                   }
                 }
               }
@@ -147,17 +180,19 @@ export async function cleanupExpiredMeetings(): Promise<{
               try {
                 await sendEmail({
                   to: recipientEmail,
-                  subject: 'No response from mentor - your token is returned',
-                  template: 'mentee-meeting-no-response',
+                  subject: 'Meeting Request Automatically Cancelled – CONNEXT',
+                  template: 'meeting-cancelled-no-acceptance',
                   data: {
                     menteeName: recipientName,
                     mentorName: expiredMeeting.mentor_name || 'the mentor',
                     date: expiredMeeting.date,
                     time: expiredMeeting.time,
+                    timezone: requester.mentee_timezone || requester.timezone || 'Asia/Kuala_Lumpur',
                   },
                 });
+                console.log(`📧 Auto-cancel notification sent to ${recipientEmail}`);
               } catch (emailError) {
-                console.error(`Failed to send no-response email for meeting ${expiredMeeting.meetingId}:`, emailError);
+                console.error(`Failed to send cancellation email for meeting ${expiredMeeting.meetingId}:`, emailError);
               }
             }
           } else {
@@ -170,7 +205,7 @@ export async function cleanupExpiredMeetings(): Promise<{
     }
   }
 
-  console.log(`✅ Cleanup complete. Removed ${expiredCount} expired requests, refunded ${tokensRefunded} tokens.`);
+  console.log(`✅ Cleanup complete. Marked ${expiredCount} expired requests as cancelled, refunded ${tokensRefunded} tokens.`);
 
   return {
     expiredCount,
