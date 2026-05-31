@@ -217,7 +217,7 @@ export async function POST(request: Request) {
         // Get requester's name and email (different field names for mentor vs mentee)
         const requesterName = isRequesterMentor ? mentee.mentor_name : mentee.mentee_name;
         const requesterEmail = isRequesterMentor ? mentee.mentor_email : mentee.mentee_email;
-        const requesterUID = isRequesterMentor ? mentee.mentorUID : mentee.menteeUID;
+        const requesterUID = isRequesterMentor ? (mentee.mentorUID || menteeId) : (mentee.menteeUID || menteeId);
         const requesterTimezone = mentee.timezone || MY_TIMEZONE;
         const mentorTimezone = mentor.timezone || MY_TIMEZONE;
 
