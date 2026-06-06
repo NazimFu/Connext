@@ -120,7 +120,7 @@ async function sendReviewNotification(
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/${applicationType}/dashboard" 
+          <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://connext-platform.vercel.app/'}" 
              style="background-color: #4CAF50; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold;">
             Access Your Dashboard
           </a>
