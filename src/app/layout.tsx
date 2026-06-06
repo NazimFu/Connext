@@ -5,7 +5,7 @@ import { AuthProvider } from '@/hooks/use-auth';
 import AppLayout from '@/components/AppLayout';
 
 export const metadata: Metadata = {
-  title: 'Luminiktyo',
+  title: 'Connext',
   description: 'Unlock your potential with expert mentorship.',
 };
 

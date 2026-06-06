@@ -110,7 +110,9 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
   if (tokenCycleStatus === 'pending' && tokenCycle) {
     const tokenUsedAt = tokenCycle.tokenUsedAt ? new Date(tokenCycle.tokenUsedAt) : null;
     if (tokenUsedAt && !Number.isNaN(tokenUsedAt.getTime())) {
-      const cooldownEnd = new Date(tokenUsedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+      //TOKEN TEST 20 DAYS
+      // const cooldownEnd = new Date(tokenUsedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const cooldownEnd = new Date(tokenUsedAt.getTime() + 20 * 24 * 60 * 60 * 1000);
       daysRemainingInCycle = Math.max(0, Math.ceil((cooldownEnd.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
     }
   }

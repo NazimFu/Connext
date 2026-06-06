@@ -26,7 +26,9 @@ const REQUEST_WINDOW_MAX_DAYS = 30;
 const FEEDBACK_UNLOCK_HOURS = 2;
 
 // Token replenishment: 30-day cooldown after token usage
-const REPLENISHMENT_COOLDOWN_DAYS = 30;
+//TOKEN TEST 20 DAYS -> 30 to 20
+// const REPLENISHMENT_COOLDOWN_DAYS = 30;
+const REPLENISHMENT_COOLDOWN_DAYS = 20;
 
 /**
  * Converts a stored meeting date/time (assumed to be in a reference timezone)

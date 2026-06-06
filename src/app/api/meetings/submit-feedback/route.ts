@@ -142,7 +142,9 @@ export async function POST(req: NextRequest) {
     await containerToUpdate.item(userId, userId).replace(user);
 
     return NextResponse.json({
-      message: "Feedback submitted successfully. Your token will be replenished after the 30-day cooldown once feedback is valid.",
+      //TOKEN TEST 20 DAYS
+      // message: "Feedback submitted successfully. Your token will be replenished after the 30-day cooldown once feedback is valid.",
+      message: "Feedback submitted successfully. Your token will be replenished after the 20-day cooldown once feedback is valid.",
       success: true,
       newTokenBalance: user.tokens || 0,
       tokenReplenished: false,
