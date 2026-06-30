@@ -118,6 +118,16 @@ const renderMeetingTimeDetails = (
   }
 };
 
+const renderGoogleMeetAccountNotice = (): string => `
+  <div style="background: linear-gradient(135deg, #fef9c3 0%, #fde68a 100%); padding: 16px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #f59e0b;">
+    <p style="margin: 0 0 8px 0; color: #92400e; font-size: 14px; font-weight: 700;">Important Google Meet note</p>
+    <p style="margin: 0; color: #92400e; font-size: 14px; line-height: 1.6;">
+      Please make sure your Google Meet account uses the same email address linked to your Connext account.
+      If you use an Outlook or other email address, you can still join - just create or sign in to a Google account with that same email first.
+    </p>
+  </div>
+`;
+
 export async function sendEmail({
   to,
   subject,
@@ -148,6 +158,7 @@ export async function sendEmail({
       `
         <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.mentorName || 'there'}</strong>,</p>
         <p style="font-size: 16px; margin: 0 0 24px 0;">You have a new meeting request from <strong>${data.menteeName}</strong>.</p>
+        ${renderGoogleMeetAccountNotice()}
         
         <div style="background: linear-gradient(135deg, #fef3c7 0%, #fef08a 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #f59e0b;">
           <h3 style="margin: 0 0 16px 0; color: #92400e; font-size: 16px;">📅 Meeting Details:</h3>
@@ -166,6 +177,7 @@ export async function sendEmail({
       `
         <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.menteeName || 'there'}</strong>,</p>
         <p style="font-size: 16px; margin: 0 0 24px 0;">Great news! Your meeting request has been accepted by <strong>${data.mentorName}</strong>.</p>
+        ${renderGoogleMeetAccountNotice()}
         
         <div style="background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #10b981;">
           <h3 style="margin: 0 0 16px 0; color: #065f46; font-size: 16px;">📅 Meeting Details:</h3>
@@ -184,6 +196,7 @@ export async function sendEmail({
       `
         <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.menteeName || 'there'}</strong>,</p>
         <p style="font-size: 16px; margin: 0 0 24px 0;">Unfortunately, <strong>${data.mentorName}</strong> has declined your meeting request.</p>
+        ${renderGoogleMeetAccountNotice()}
         
         <div style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #ef4444;">
           <h3 style="margin: 0 0 16px 0; color: #991b1b; font-size: 16px;">📅 Request Details:</h3>
@@ -419,6 +432,7 @@ export async function sendEmail({
       `
         <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.menteeName || 'there'}</strong>,</p>
         <p style="font-size: 16px; margin: 0 0 24px 0;">Just a friendly reminder — your mentorship session with <strong>${data.mentorName}</strong> is scheduled for <strong>tomorrow</strong>.</p>
+        ${renderGoogleMeetAccountNotice()}
 
         <div style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #3b82f6;">
           <h3 style="margin: 0 0 16px 0; color: #1d4ed8; font-size: 16px;">📅 Session Details:</h3>
@@ -438,6 +452,7 @@ export async function sendEmail({
       `
         <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.mentorName || 'there'}</strong>,</p>
         <p style="font-size: 16px; margin: 0 0 24px 0;">This is a reminder that you have a mentorship session with <strong>${data.menteeName}</strong> scheduled for <strong>tomorrow</strong>.</p>
+        ${renderGoogleMeetAccountNotice()}
 
         <div style="background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #10b981;">
           <h3 style="margin: 0 0 16px 0; color: #065f46; font-size: 16px;">📅 Session Details:</h3>
@@ -457,6 +472,7 @@ export async function sendEmail({
       `
         <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.mentorName || 'there'}</strong>,</p>
         <p style="font-size: 16px; margin: 0 0 24px 0;">You have a pending meeting request from <strong>${data.menteeName}</strong> that requires your response. The meeting is scheduled in approximately <strong>5 days</strong>.</p>
+        ${renderGoogleMeetAccountNotice()}
 
         <div style="background: linear-gradient(135deg, #fef3c7 0%, #fef08a 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #f59e0b;">
           <h3 style="margin: 0 0 16px 0; color: #92400e; font-size: 16px;">📅 Pending Request Details:</h3>

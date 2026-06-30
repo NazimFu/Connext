@@ -88,10 +88,12 @@ function TagInput({ tags, setTags, placeholder, accentColor }: TagInputProps) {
         />
       </div>
       <p className="mt-2 text-xs text-gray-600 flex items-center gap-1">
+        <span>Type an item, then press</span>
         <kbd className="px-1.5 py-0.5 bg-gray-200 border border-gray-300 rounded text-[10px] font-mono">Enter</kbd>
-        <span>or</span>
-        <kbd className="px-1.5 py-0.5 bg-gray-200 border border-gray-300 rounded text-[10px] font-mono">,</kbd>
-        <span>to add</span>
+        <span>to add it.</span>
+        <span className="hidden sm:inline"> You can also use</span>
+        <kbd className="px-1.5 py-0.5 bg-gray-200 border border-gray-300 rounded text-[10px] font-mono hidden sm:inline-flex">,</kbd>
+        <span className="hidden sm:inline"> for the same result.</span>
       </p>
     </div>
   );

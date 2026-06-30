@@ -398,11 +398,7 @@ export default function MenteeNoticesPage() {
   };
 
   const isJoinButtonEnabled = (task: TaskItem): boolean => {
-    if (!task.meetingUtcMs) return false;
-    const now = Date.now();
-    const tenMinBefore = task.meetingUtcMs - 10 * 60 * 1000;
-    const oneHourAfter = task.meetingUtcMs + 60 * 60 * 1000;
-    return now >= tenMinBefore && now < oneHourAfter;
+    return task.decision === 'accepted' && (!!task.meetingLink || !!task.googleMeetUrl);
   };
 
   const getDaysInMonth = (date: Date): CalendarDay[] => {
@@ -497,6 +493,17 @@ export default function MenteeNoticesPage() {
                 <span>Times shown in your preferred timezone. Go to <strong>My Profile</strong> to change.</span>
               </div>
             )}
+
+            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-amber-600" />
+              <div className="space-y-1">
+                <p className="font-semibold">Google Meet account reminder</p>
+                <p>
+                  Your Google Meet account should use the same email linked to your Connext account.
+                  If you use an Outlook or other email address, that is still fine - just create or sign in to a Google account with that same email before your session.
+                </p>
+              </div>
+            </div>
 
             {/* Stats + toolbar row */}
             <div className="flex items-start justify-between gap-4 mb-6">
@@ -782,15 +789,20 @@ export default function MenteeNoticesPage() {
                 <DialogFooter className="gap-3 mt-2">
                   {selectedTask?.type === 'meeting' ? (
                     <>
-                      <Button
-                        onClick={handleJoinMeeting}
-                        className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 h-11 shadow-md"
-                        disabled={!isJoinButtonEnabled(selectedTask) || (!selectedTask.googleMeetUrl && !selectedTask.meetingLink)}
-                        title={!isJoinButtonEnabled(selectedTask) ? 'Join available 10 minutes before the meeting' : 'Click to join the meeting'}
-                      >
-                        <Video className="w-4 h-4 mr-2" />
-                        {isJoinButtonEnabled(selectedTask) ? 'Join Meeting' : 'Not Available Yet'}
-                      </Button>
+                      <div className="flex-1 space-y-2">
+                        <Button
+                          onClick={handleJoinMeeting}
+                          className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 h-11 shadow-md"
+                          disabled={!selectedTask.googleMeetUrl && !selectedTask.meetingLink}
+                          title="Click to join the meeting"
+                        >
+                          <Video className="w-4 h-4 mr-2" />
+                          Join Meeting
+                        </Button>
+                        <p className="text-xs text-gray-500 text-center leading-relaxed">
+                          The meeting link is ready, but the session may not have started yet.
+                        </p>
+                      </div>
                       <Button onClick={() => handleCancelClick(selectedTask)} variant="destructive" className="flex-1 h-11 shadow-md">
                         <XCircle className="w-4 h-4 mr-2" /> Cancel Meeting
                       </Button>

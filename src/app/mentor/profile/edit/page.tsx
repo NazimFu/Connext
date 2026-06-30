@@ -103,7 +103,7 @@ function TagInput({ tags, setTags, placeholder }: TagInputProps) {
           placeholder={tags.length === 0 ? placeholder : 'Add more…'}
           className="flex-1 min-w-[160px] bg-transparent border-0 outline-none text-neutral-800 placeholder-neutral-400 text-sm px-1" />
       </div>
-      
+      <p className="text-xs text-neutral-500 px-1">Type an item, then press Enter to add it. Commas also work.</p>
     </div>
   );
 }
