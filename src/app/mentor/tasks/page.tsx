@@ -494,16 +494,18 @@ export default function MentorTasksPage() {
               </div>
             )}
 
-            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-amber-600" />
-              <div className="space-y-1">
-                <p className="font-semibold">Google Meet account reminder</p>
-                <p>
-                  Your Google Meet account should use the same email linked to your Connext account.
-                  If you use an Outlook or other email address, that is still fine - just create or sign in to a Google account with that same email before your session.
-                </p>
+            {pendingCount + upcomingCount + feedbackCount > 0 && (
+              <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-amber-600" />
+                <div className="space-y-1">
+                  <p className="font-semibold">Google Meet account reminder</p>
+                  <p>
+                    Your Google Meet account should use the same email linked to your Connext account.
+                    If you use an Outlook or other email address, that is still fine - just create or sign in to a Google account with that same email before your session.
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Stats + toolbar */}
             <div className="flex items-start justify-between gap-4 mb-6">

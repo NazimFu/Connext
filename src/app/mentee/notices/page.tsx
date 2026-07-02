@@ -469,6 +469,7 @@ export default function MenteeNoticesPage() {
   const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const pendingCount = tasks.filter(t => t.type === 'pending_request').length;
   const upcomingCount = tasks.filter(t => t.type === 'meeting').length;
+  const inProgressCount = tasks.filter(t => t.type === 'in_progress_meeting').length;
   const feedbackCount = tasks.filter(t => t.type === 'feedback').length;
   const completedCount = tasks.filter(t => t.type === 'past_meeting').length;
 
@@ -494,16 +495,18 @@ export default function MenteeNoticesPage() {
               </div>
             )}
 
-            <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-amber-600" />
-              <div className="space-y-1">
-                <p className="font-semibold">Google Meet account reminder</p>
-                <p>
-                  Your Google Meet account should use the same email linked to your Connext account.
-                  If you use an Outlook or other email address, that is still fine - just create or sign in to a Google account with that same email before your session.
-                </p>
+            {upcomingCount + inProgressCount > 0 && (
+              <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-amber-600" />
+                <div className="space-y-1">
+                  <p className="font-semibold">Google Meet account reminder</p>
+                  <p>
+                    Your Google Meet account should use the same email linked to your Connext account.
+                    If you use an Outlook or other email address, that is still fine - just create or sign in to a Google account with that same email before your session.
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Stats + toolbar row */}
             <div className="flex items-start justify-between gap-4 mb-6">
@@ -729,6 +732,19 @@ export default function MenteeNoticesPage() {
                     {isNonDefaultTz && (
                       <div className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-2">
                         🌐 Displayed in your timezone. Stored in Malaysia time (UTC+8).
+                      </div>
+                    )}
+
+                    {(selectedTask.type === 'pending_request' || selectedTask.type === 'meeting' || selectedTask.type === 'in_progress_meeting') && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900 flex items-start gap-3">
+                        <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-amber-600" />
+                        <div className="space-y-1">
+                          <p className="font-semibold">Google Meet account reminder</p>
+                          <p>
+                            Your Google Meet account should use the same email linked to your Connext account.
+                            If you use an Outlook or other email address, that is still fine - just create or sign in to a Google account with that same email before your session.
+                          </p>
+                        </div>
                       </div>
                     )}
 

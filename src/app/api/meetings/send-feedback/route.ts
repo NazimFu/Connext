@@ -11,6 +11,10 @@ type UserDoc = {
   id: string;
   mentorUID?: string;
   mentee_id?: string;
+  mentor_email?: string;
+  mentee_email?: string;
+  mentor_name?: string;
+  mentee_name?: string;
   scheduling?: any[];
 };
 
@@ -18,6 +22,7 @@ type RequesterRecord = {
   container: any;
   doc: UserDoc;
   scheduleIndex: number;
+  isMentorRequester: boolean;
 };
 
 type DeliveryState = {
@@ -102,6 +107,7 @@ const findRequesterRecord = (
       container: database.container('mentee'),
       doc: menteeDoc,
       scheduleIndex: menteeScheduleIndex,
+      isMentorRequester: false,
     };
   }
 
@@ -113,6 +119,7 @@ const findRequesterRecord = (
         container: database.container('mentor'),
         doc: requesterMentor,
         scheduleIndex,
+        isMentorRequester: true,
       };
     }
   }
@@ -229,23 +236,16 @@ export async function POST(request: NextRequest) {
             throw new Error('Requester meeting details missing');
           }
 
-          if (mentorMeeting.feedbackFormSent === true || requesterMeeting.feedbackFormSent === true) {
+          if (requesterMeeting.feedbackFormSent === true) {
             continue;
           }
 
-          const alreadyDelivered =
-            mentorMeeting.feedbackFormDelivered === true || requesterMeeting.feedbackFormDelivered === true;
-          const deliveredAt =
-            getMeetingString(mentorMeeting.feedbackFormDeliveredAt) ||
-            getMeetingString(requesterMeeting.feedbackFormDeliveredAt) ||
-            now.toISOString();
+          const deliveredAt = getMeetingString(requesterMeeting.feedbackFormDeliveredAt) || now.toISOString();
 
-          let feedbackToken =
-            getMeetingString(mentorMeeting.feedbackToken) || getMeetingString(requesterMeeting.feedbackToken);
-          let formUrl =
-            getMeetingString(mentorMeeting.feedbackFormUrl) || getMeetingString(requesterMeeting.feedbackFormUrl);
+          let feedbackToken = getMeetingString(requesterMeeting.feedbackToken);
+          let formUrl = getMeetingString(requesterMeeting.feedbackFormUrl);
 
-          if (!alreadyDelivered && (!feedbackToken || !formUrl)) {
+          if (!feedbackToken || !formUrl) {
             const signedLink = createSignedFeedbackFormLink(
               {
                 meetingId,
@@ -262,38 +262,37 @@ export async function POST(request: NextRequest) {
             formUrl = signedLink.formUrl;
           }
 
-          if (alreadyDelivered && (!feedbackToken || !formUrl)) {
-            throw new Error(
-              'Feedback delivery metadata is incomplete on existing records; refusing to regenerate a new signed link after delivery.'
-            );
-          }
-
           const deliveryState: DeliveryState = {
             deliveredAt,
             feedbackToken: feedbackToken as string,
             formUrl: formUrl as string,
           };
 
-          if (!alreadyDelivered) {
-            const menteeEmail = mentorMeeting.mentee_email || requesterMeeting.mentee_email;
-            if (!getMeetingString(menteeEmail)) {
-              throw new Error('Mentee email is missing for this meeting');
-            }
+          const requesterEmail = requesterRecord.isMentorRequester
+            ? getMeetingString(requesterRecord.doc.mentor_email)
+            : getMeetingString(requesterRecord.doc.mentee_email);
 
-            await sendEmail({
-              to: menteeEmail,
-              subject: 'Your Session Feedback - Connext',
-              template: 'mentee-feedback-form',
-              data: {
-                menteeName: mentorMeeting.mentee_name || requesterMeeting.mentee_name || 'there',
-                mentorName: mentorMeeting.mentor_name || 'your mentor',
-                date: mentorMeeting.date,
-                time: mentorMeeting.time,
-                timezone: mentorMeeting.mentee_timezone || requesterMeeting.mentee_timezone || requesterMeeting.timezone || mentorMeeting.timezone || 'Asia/Kuala_Lumpur',
-                formUrl: deliveryState.formUrl,
-              },
-            });
+          if (!requesterEmail) {
+            throw new Error('Requester email is missing for this meeting');
           }
+
+          if (requesterMeeting.feedbackFormDelivered === true) {
+            continue;
+          }
+
+          await sendEmail({
+            to: requesterEmail,
+            subject: 'Your Session Feedback - Connext',
+            template: 'mentee-feedback-form',
+            data: {
+              menteeName: requesterMeeting.mentee_name || requesterRecord.doc.mentee_name || requesterRecord.doc.mentor_name || 'there',
+              mentorName: mentorMeeting.mentor_name || 'your mentor',
+              date: mentorMeeting.date,
+              time: mentorMeeting.time,
+              timezone: requesterMeeting.mentee_timezone || requesterMeeting.timezone || mentorMeeting.mentee_timezone || mentorMeeting.timezone || 'Asia/Kuala_Lumpur',
+              formUrl: deliveryState.formUrl,
+            },
+          });
 
           const mentorChanged = applyDeliveryState(mentorMeeting, deliveryState);
           const requesterChanged = applyDeliveryState(requesterMeeting, deliveryState);
@@ -308,7 +307,7 @@ export async function POST(request: NextRequest) {
               .replace(requesterRecord.doc);
           }
 
-          if (!alreadyDelivered) {
+          if (requesterEmail) {
             sentForms.push(`${meetingId} (${mentorMeeting.mentee_name || 'unknown mentee'})`);
             console.log(`Feedback form sent for meeting ${meetingId}`);
           }

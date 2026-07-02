@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, Clock, MessageSquare, Video, User, Mail, CheckCircle2, XCircle, AlertCircle, CalendarDays, RefreshCw, Send } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useRequireAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -39,6 +41,10 @@ export default function MeetingRequestsPage() {
   const [selectedRequest, setSelectedRequest] = useState<MeetingRequest | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [fetchingData, setFetchingData] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [meetingToCancel, setMeetingToCancel] = useState<MeetingRequest | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [isCancelling, setIsCancelling] = useState(false);
   const { toast } = useToast();
 
   const userTz = (user as any)?.timezone || DEFAULT_TIMEZONE;
@@ -119,6 +125,54 @@ export default function MeetingRequestsPage() {
     else toast({ variant: "destructive", title: "No Meeting Link", description: "Meeting link is not available yet." });
   };
 
+  const openCancelDialog = (meeting: MeetingRequest) => {
+    setMeetingToCancel(meeting);
+    setCancelReason('');
+    setCancelDialogOpen(true);
+  };
+
+  const handleCancelMeeting = async () => {
+    if (!meetingToCancel || !user || !cancelReason.trim()) {
+      toast({ variant: "destructive", title: "Reason Required", description: "Please provide a reason for cancellation." });
+      return;
+    }
+
+    setIsCancelling(true);
+    try {
+      const response = await fetch(`/api/schedule/${meetingToCancel.meetingId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: cancelReason, cancelledBy: user.id }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || 'Failed to cancel meeting');
+      }
+
+      const result = await response.json();
+      toast({
+        title: 'Meeting Cancelled',
+        description: result.tokenStatus === 'auto-replenished'
+          ? 'Token refunded to requester.'
+          : 'Token refund pending admin approval.',
+      });
+
+      setCancelDialogOpen(false);
+      setMeetingToCancel(null);
+      setCancelReason('');
+      await fetchMeetingRequests();
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to cancel meeting.',
+      });
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
   if (isLoading || !user) {
     return <div className="flex justify-center items-center h-screen"><Loader2 className="h-8 w-8 animate-spin" /></div>;
   }
@@ -156,6 +210,19 @@ export default function MeetingRequestsPage() {
               <div className="mb-4 bg-teal-50 border border-teal-200 rounded-lg px-4 py-2 text-sm text-teal-800 flex items-center gap-2">
                 <span>🌐</span>
                 <span>Times shown in your preferred timezone. Go to <strong>My Profile</strong> to change.</span>
+              </div>
+            )}
+
+            {upcomingMeetings.length > 0 && (
+              <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-amber-600" />
+                <div className="space-y-1">
+                  <p className="font-semibold">Google Meet account reminder</p>
+                  <p>
+                    Your Google Meet account should use the same email linked to your Connext account.
+                    If you use an Outlook or other email address, that is still fine - just create or sign in to a Google account with that same email before your session.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -256,9 +323,14 @@ export default function MeetingRequestsPage() {
                               </div>
                               {req.message && <div className="bg-purple-50 border-l-4 border-purple-400 p-4 rounded-r-lg"><p className="text-sm font-medium text-purple-900 mb-1 flex items-center gap-2"><MessageSquare className="h-4 w-4" />Your message:</p><p className="text-sm text-purple-800">{req.message}</p></div>}
                             </div>
-                            <div className="min-w-[160px] text-center p-4 bg-purple-50 rounded-lg">
-                              <Clock className="h-8 w-8 text-purple-500 mx-auto mb-2" />
-                              <p className="text-sm font-medium text-purple-700">Waiting for mentor to respond</p>
+                            <div className="min-w-[160px] flex flex-col gap-3">
+                              <div className="text-center p-4 bg-purple-50 rounded-lg">
+                                <Clock className="h-8 w-8 text-purple-500 mx-auto mb-2" />
+                                <p className="text-sm font-medium text-purple-700">Waiting for mentor to respond</p>
+                              </div>
+                              <Button variant="outline" onClick={() => openCancelDialog(req)} className="border-red-300 text-red-600 hover:bg-red-50">
+                                <XCircle className="h-4 w-4 mr-2" /> Cancel Request
+                              </Button>
                             </div>
                           </div>
                         </CardContent>
@@ -276,6 +348,7 @@ export default function MeetingRequestsPage() {
                   ) : upcomingMeetings.map(req => {
                     const { utcDate, displayDate, displayTime, tzLabel } = fmt(req);
                     const timeUntil = formatDistance(utcDate, new Date(), { addSuffix: true });
+                    const isFuture = utcDate.getTime() > now;
                     const userIsMentor = req.userRole === 'mentor';
                     const displayName = userIsMentor ? req.mentee_name : req.mentor_name;
                     const displayEmail = userIsMentor ? req.mentee_email : req.mentor_email;
@@ -299,6 +372,11 @@ export default function MeetingRequestsPage() {
                               <Button onClick={() => handleJoinMeeting(req.meetingLink, req.googleMeetUrl)} className="bg-blue-600 hover:bg-blue-700 shadow-md" disabled={!req.meetingLink && !req.googleMeetUrl}>
                                 <Video className="h-4 w-4 mr-2" /> Join Meeting
                               </Button>
+                              {isFuture && (
+                                <Button variant="outline" onClick={() => openCancelDialog(req)} className="border-red-300 text-red-600 hover:bg-red-50">
+                                  <XCircle className="h-4 w-4 mr-2" /> Cancel Meeting
+                                </Button>
+                              )}
                               {!req.meetingLink && !req.googleMeetUrl && <p className="text-xs text-center text-muted-foreground">Link available soon</p>}
                             </div>
                           </div>
@@ -403,6 +481,58 @@ export default function MeetingRequestsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={cancelDialogOpen} onOpenChange={(open) => {
+        setCancelDialogOpen(open);
+        if (!open) {
+          setMeetingToCancel(null);
+          setCancelReason('');
+          setIsCancelling(false);
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel Meeting?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to cancel this meeting?
+              {meetingToCancel && (() => {
+                const { displayDate, displayTime, tzLabel } = fmt(meetingToCancel);
+                const counterpartName = meetingToCancel.userRole === 'mentor' ? meetingToCancel.mentee_name : meetingToCancel.mentor_name;
+                return (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-sm"><strong>With:</strong> {counterpartName}</p>
+                    <p className="text-sm"><strong>Date:</strong> {displayDate}</p>
+                    <p className="text-sm"><strong>Time:</strong> {displayTime}{isNonDefaultTz ? ` (${tzLabel})` : ''}</p>
+                  </div>
+                );
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <label htmlFor="cancel-reason" className="text-sm font-medium mb-2 block">
+              Reason for cancellation <span className="text-red-500">*</span>
+            </label>
+            <Textarea
+              id="cancel-reason"
+              placeholder="Please provide a reason for cancelling..."
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              disabled={isCancelling}
+              className="min-h-[100px]"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isCancelling}>Keep Meeting</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCancelMeeting}
+              disabled={isCancelling || !cancelReason.trim()}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isCancelling ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Cancelling...</> : 'Cancel Meeting'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

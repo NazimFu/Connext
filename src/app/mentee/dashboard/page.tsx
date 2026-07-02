@@ -204,16 +204,18 @@ export default function MenteeDashboardPage() {
             </div>
           )}
 
-          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-amber-600" />
-            <div className="space-y-1">
-              <p className="font-semibold">Google Meet account reminder</p>
-              <p>
-                Your Google Meet account should use the same email linked to your Connext account.
-                If you use an Outlook or other email address, that is still fine - just create or sign in to a Google account with that same email before your session.
-              </p>
+          {meeting.decision === "accepted" && isFuture && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-amber-600" />
+              <div className="space-y-1">
+                <p className="font-semibold">Google Meet account reminder</p>
+                <p>
+                  Your Google Meet account should use the same email linked to your Connext account.
+                  If you use an Outlook or other email address, that is still fine - just create or sign in to a Google account with that same email before your session.
+                </p>
+              </div>
             </div>
-          </div>
+          )}
 
           {meeting.decision === "accepted" && isFuture && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-3">
@@ -233,8 +235,8 @@ export default function MenteeDashboardPage() {
             </div>
           )}
 
-          {/* Join button (available once the meeting is accepted and a link exists) */}
-          {meeting.decision === "accepted" && (meeting.meetingLink || meeting.googleMeetUrl) && (
+          {/* Join button (available for upcoming/in-progress accepted meetings with a link) */}
+          {meeting.decision === "accepted" && !isPast && (meeting.meetingLink || meeting.googleMeetUrl) && (
             <div className="space-y-2">
               <Button onClick={() => handleJoinMeeting(meeting.meetingLink, meeting.googleMeetUrl)}
                 className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700">
@@ -285,6 +287,19 @@ export default function MenteeDashboardPage() {
               <div className="mb-4 bg-teal-50 border border-teal-200 rounded-lg px-4 py-2 text-sm text-teal-800 flex items-center gap-2">
                 <span>🌐</span>
                 <span>All times shown in your timezone preference. Go to <strong>My Profile</strong> to change.</span>
+              </div>
+            )}
+
+            {upcomingMeetings.length > 0 && (
+              <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-amber-600" />
+                <div className="space-y-1">
+                  <p className="font-semibold">Google Meet account reminder</p>
+                  <p>
+                    Your Google Meet account should use the same email linked to your Connext account.
+                    If you use an Outlook or other email address, that is still fine - just create or sign in to a Google account with that same email before your session.
+                  </p>
+                </div>
               </div>
             )}
 
