@@ -33,6 +33,8 @@ type ReportSummary = {
   reportReviewNotes: string | null;
   reportReviewedAt: string | null;
   reportReviewedBy: string | null;
+  banLiftedAt: string | null;
+  banLiftedBy: string | null;
 };
 
 const mentorContainer = database.container('mentor');
@@ -101,6 +103,8 @@ export async function GET() {
           reportReviewNotes: meeting.mentor_report.review_notes ?? null,
           reportReviewedAt: meeting.mentor_report.reviewed_at ?? null,
           reportReviewedBy: meeting.mentor_report.reviewed_by ?? null,
+          banLiftedAt: (meeting.mentor_report as any).ban_lifted_at ?? null,
+          banLiftedBy: (meeting.mentor_report as any).ban_lifted_by ?? null,
         });
       }
 
@@ -126,6 +130,8 @@ export async function GET() {
           reportReviewNotes: meeting.mentee_report.review_notes ?? null,
           reportReviewedAt: meeting.mentee_report.reviewed_at ?? null,
           reportReviewedBy: meeting.mentee_report.reviewed_by ?? null,
+          banLiftedAt: null,
+          banLiftedBy: null,
         });
       }
     }
@@ -169,7 +175,7 @@ async function setAccountFrozen(
 
 export async function PATCH(request: Request) {
   try {
-    const { meetingId, reportType, status, reviewerName, reviewNotes, actionReason } =
+    const { meetingId, reportType, status, reviewerName, reviewNotes, actionReason, liftBan } =
       await request.json();
 
     if (!meetingId || typeof meetingId !== 'string') {
@@ -181,6 +187,69 @@ export async function PATCH(request: Request) {
         { message: 'Valid reportType is required (mentor_report or mentee_report)' },
         { status: 400 }
       );
+    }
+
+    const lookup = await locateMeeting(meetingId);
+
+    if (!lookup?.meeting) {
+      return NextResponse.json({ message: 'Meeting not found' }, { status: 404 });
+    }
+
+    // ─── LIFT BAN ────────────────────────────────────────────────────────────
+    // Unfreezes the reported mentee's account WITHOUT touching the report's
+    // status — the report stays "resolved" (accepted) instead of reverting to
+    // "pending", which used to make the filer's report look unreviewed again.
+    if (liftBan === true) {
+      if (reportType !== 'mentor_report') {
+        return NextResponse.json(
+          { message: 'Only mentor reports can freeze or unban an account' },
+          { status: 400 }
+        );
+      }
+
+      const reviewer = typeof reviewerName === 'string' ? reviewerName.trim() : '';
+      if (!reviewer) {
+        return NextResponse.json(
+          { message: 'Reviewer name is required to lift a ban' },
+          { status: 400 }
+        );
+      }
+
+      const { mentee: bannedUser, menteeScheduleIndex: bannedScheduleIndex, mentor: reportingMentor, mentorScheduleIndex: mentorScheduleIdx, menteeIsInMentorContainer: bannedIsInMentorContainer } = lookup;
+
+      if (!bannedUser) {
+        return NextResponse.json({ message: 'Reported user not found' }, { status: 404 });
+      }
+
+      const requester: any = bannedUser;
+      await setAccountFrozen(requester, !!bannedIsInMentorContainer, false);
+
+      const liftedAt = new Date().toISOString();
+      const banLiftOperations: PatchOperation[] = [
+        { op: 'add', path: `/scheduling/${bannedScheduleIndex}/mentor_report/ban_lifted_at`, value: liftedAt },
+        { op: 'add', path: `/scheduling/${bannedScheduleIndex}/mentor_report/ban_lifted_by`, value: reviewer },
+      ];
+
+      if (bannedScheduleIndex > -1) {
+        if (bannedIsInMentorContainer) {
+          await mentorContainer.item(requester.id, requester.id).patch(banLiftOperations);
+        } else {
+          await menteeContainer.item(requester.id, requester.id).patch(banLiftOperations);
+        }
+      }
+
+      if (reportingMentor && mentorScheduleIdx > -1) {
+        const mirrorOperations: PatchOperation[] = [
+          { op: 'add', path: `/scheduling/${mentorScheduleIdx}/mentor_report/ban_lifted_at`, value: liftedAt },
+          { op: 'add', path: `/scheduling/${mentorScheduleIdx}/mentor_report/ban_lifted_by`, value: reviewer },
+        ];
+        await mentorContainer.item(reportingMentor.id, reportingMentor.id).patch(mirrorOperations);
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Ban lifted — report remains accepted',
+      });
     }
 
     if (!status || !['pending', 'resolved', 'rejected'].includes(status)) {
@@ -204,12 +273,6 @@ export async function PATCH(request: Request) {
         { message: 'Action reason is required when approving a mentor report' },
         { status: 400 }
       );
-    }
-
-    const lookup = await locateMeeting(meetingId);
-
-    if (!lookup?.meeting) {
-      return NextResponse.json({ message: 'Meeting not found' }, { status: 404 });
     }
 
     let { mentor, mentorScheduleIndex, mentee, menteeScheduleIndex, meeting, menteeIsInMentorContainer } =

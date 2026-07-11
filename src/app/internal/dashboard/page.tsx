@@ -53,6 +53,7 @@ interface ReportItem {
   decision: string; scheduledStatus: string;
   reportReviewNotes: string | null; reportReviewedAt: string | null; reportReviewedBy: string | null;
   reportFiledByUid: string | null; reportTargetUid: string | null;
+  banLiftedAt: string | null; banLiftedBy: string | null;
 }
 interface TokenStatus {
   status: "authorized" | "not_authorized";
@@ -153,7 +154,7 @@ export default function InternalDashboard() {
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportFilter, setReportFilter] = useState<"all" | "pending" | "resolved">("pending");
   const [reportDialog, setReportDialog] = useState<{
-    open: boolean; report: ReportItem | null; action: "accept" | "reject" | "reopen";
+    open: boolean; report: ReportItem | null; action: "accept" | "reject" | "reopen" | "lift_ban";
   }>({ open: false, report: null, action: "accept" });
   const [reportReviewer, setReportReviewer] = useState("");
   const [reportNotes, setReportNotes] = useState("");
@@ -257,14 +258,23 @@ export default function InternalDashboard() {
     try {
       await fetch("/api/reports", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          meetingId: reportDialog.report.meetingId,
-          reportType: reportDialog.report.reportType,
-          status: reportDialog.action === "accept" ? "resolved" : reportDialog.action === "reject" ? "rejected" : "pending",
-          reviewerName: reportDialog.action !== "reopen" ? reportReviewer.trim() : undefined,
-          reviewNotes: reportNotes,
-          actionReason: reportDialog.action === "accept" ? selectedReason : undefined,
-        }),
+        body: JSON.stringify(
+          reportDialog.action === "lift_ban"
+            ? {
+                meetingId: reportDialog.report.meetingId,
+                reportType: reportDialog.report.reportType,
+                liftBan: true,
+                reviewerName: reportReviewer.trim(),
+              }
+            : {
+                meetingId: reportDialog.report.meetingId,
+                reportType: reportDialog.report.reportType,
+                status: reportDialog.action === "accept" ? "resolved" : reportDialog.action === "reject" ? "rejected" : "pending",
+                reviewerName: reportDialog.action !== "reopen" ? reportReviewer.trim() : undefined,
+                reviewNotes: reportNotes,
+                actionReason: reportDialog.action === "accept" ? selectedReason : undefined,
+              }
+        ),
       });
       setReportDialog({ open: false, report: null, action: "accept" });
       setReportReviewer(""); setReportNotes("");
@@ -520,7 +530,8 @@ export default function InternalDashboard() {
                     <ReportCard key={`${r.meetingId}-${r.reportType}`} report={r} fmtDate={fmtDateShort}
                       onAccept={() => { setReportDialog({ open: true, report: r, action: "accept" }); setReportReviewer(""); setReportNotes(""); setReportActionReason("Inappropriate behavior"); setReportActionReasonCustom(""); }}
                       onReject={() => { setReportDialog({ open: true, report: r, action: "reject" }); setReportReviewer(""); setReportNotes(""); setReportActionReason("Inappropriate behavior"); setReportActionReasonCustom(""); }}
-                      onReopen={() => { setReportDialog({ open: true, report: r, action: "reopen" }); setReportReviewer(""); setReportNotes(""); setReportActionReason("Inappropriate behavior"); setReportActionReasonCustom(""); }} />
+                      onReopen={() => { setReportDialog({ open: true, report: r, action: "reopen" }); setReportReviewer(""); setReportNotes(""); setReportActionReason("Inappropriate behavior"); setReportActionReasonCustom(""); }}
+                      onLiftBan={() => { setReportDialog({ open: true, report: r, action: "lift_ban" }); setReportReviewer(""); setReportNotes(""); setReportActionReason("Inappropriate behavior"); setReportActionReasonCustom(""); }} />
                   ))}
                 </div>
               )}
@@ -669,10 +680,10 @@ export default function InternalDashboard() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {reportDialog.action === "accept" ? "Accept Report" : reportDialog.action === "reject" ? "Reject Report" : "Reopen Report"}
+              {reportDialog.action === "accept" ? "Accept Report" : reportDialog.action === "reject" ? "Reject Report" : reportDialog.action === "lift_ban" ? "Lift Ban" : "Reopen Report"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {reportDialog.action === "accept" ? "Accepting will immediately forfeit the cycle token and send an email notification." : reportDialog.action === "reject" ? "No penalty will be applied." : "Reopen for further review."}
+              {reportDialog.action === "accept" ? "Accepting will immediately forfeit the cycle token and send an email notification." : reportDialog.action === "reject" ? "No penalty will be applied." : reportDialog.action === "lift_ban" ? "Unfreezes the account. The report stays marked as accepted." : "Reopen for further review."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-3 space-y-3">
@@ -713,8 +724,8 @@ export default function InternalDashboard() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={reportUpdating}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleUpdateReport} disabled={reportUpdating}
-              className={reportDialog.action === "accept" ? "bg-emerald-600 hover:bg-emerald-700" : reportDialog.action === "reject" ? "bg-red-600 hover:bg-red-700" : "bg-amber-500 hover:bg-amber-600"}>
-              {reportUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : reportDialog.action === "accept" ? "Accept & Penalize" : reportDialog.action === "reject" ? "Reject" : "Reopen"}
+              className={reportDialog.action === "accept" ? "bg-emerald-600 hover:bg-emerald-700" : reportDialog.action === "reject" ? "bg-red-600 hover:bg-red-700" : reportDialog.action === "lift_ban" ? "bg-blue-600 hover:bg-blue-700" : "bg-amber-500 hover:bg-amber-600"}>
+              {reportUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : reportDialog.action === "accept" ? "Accept & Penalize" : reportDialog.action === "reject" ? "Reject" : reportDialog.action === "lift_ban" ? "Lift Ban" : "Reopen"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -874,13 +885,16 @@ function CancellationCard({ item, fmtDate, onApprove, onReject }: {
   );
 }
 
-function ReportCard({ report, fmtDate, onAccept, onReject, onReopen }: {
+function ReportCard({ report, fmtDate, onAccept, onReject, onReopen, onLiftBan }: {
   report: ReportItem; fmtDate: (s: string | null) => string;
-  onAccept: () => void; onReject: () => void; onReopen: () => void;
+  onAccept: () => void; onReject: () => void; onReopen: () => void; onLiftBan: () => void;
 }) {
   const isPending = report.reportStatus === "pending";
   const isResolved = report.reportStatus === "resolved";
   const isRejected = report.reportStatus === "rejected";
+  // Only accepted mentor reports freeze the reported mentee's account.
+  const isBanActive = report.reportType === "mentor_report" && isResolved && !report.banLiftedAt;
+  const isBanLifted = report.reportType === "mentor_report" && isResolved && !!report.banLiftedAt;
   return (
     <div className={`bg-white border rounded-xl p-5 shadow-sm border-l-4 ${isPending ? "border-l-amber-400 border-gray-200" : isResolved ? "border-l-emerald-400 border-gray-200" : "border-l-red-400 border-gray-200"}`}>
       <div className="flex items-start justify-between gap-4">
@@ -900,6 +914,8 @@ function ReportCard({ report, fmtDate, onAccept, onReject, onReopen }: {
           </div>
           {report.reportReason && <p className="text-sm text-gray-500 bg-gray-50 rounded-lg p-2 mt-1">{report.reportReason}</p>}
           {report.reportReviewNotes && <p className="text-xs text-gray-400 mt-2 italic">{report.reportReviewNotes}</p>}
+          {isBanActive && <p className="text-xs text-red-600 font-medium mt-2">Account currently frozen</p>}
+          {isBanLifted && <p className="text-xs text-blue-600 mt-2">Ban lifted{report.banLiftedBy ? ` by ${report.banLiftedBy}` : ""}{report.banLiftedAt ? ` · ${fmtDate(report.banLiftedAt)}` : ""}</p>}
         </div>
         <div className="flex gap-2 flex-shrink-0">
           {isPending ? (
@@ -911,6 +927,10 @@ function ReportCard({ report, fmtDate, onAccept, onReject, onReopen }: {
                 <X className="h-3.5 w-3.5" /> Reject
               </Button>
             </>
+          ) : isBanActive ? (
+            <Button size="sm" onClick={onLiftBan} className="bg-blue-600 hover:bg-blue-700 text-white h-8 px-3 text-xs gap-1">
+              <ShieldAlert className="h-3.5 w-3.5" /> Lift Ban
+            </Button>
           ) : (
             <Button size="sm" variant="outline" onClick={onReopen} className="h-8 px-3 text-xs gap-1">
               <RefreshCcw className="h-3.5 w-3.5" /> Reopen
