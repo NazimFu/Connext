@@ -11,7 +11,7 @@
 // Yellow brand + neutral + minimal semantic colors. Schedule toggle is overlap-proof.
 
 import React, { useState, useEffect, useRef, KeyboardEvent, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,7 +21,7 @@ import {
   X, Loader2, Pencil, Mail, CheckCircle2, AlertCircle, Clock,
   Crop as CropIcon, Eye, Upload, GripVertical, Plus,
 } from 'lucide-react';
-import { useRequireAuth } from '@/hooks/use-auth';
+import { useAuth, useRequireAuth } from '@/hooks/use-auth';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { motion } from 'framer-motion';
 import { getGoogleDriveImageUrl } from '@/lib/utils';
@@ -251,8 +251,10 @@ export default function MentorProfileEditPage() {
 
 function MentorProfileEdit() {
   const { user, isLoading } = useRequireAuth('mentor');
+  const { refreshUser } = useAuth();
   const { toast } = useToast();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
@@ -453,9 +455,26 @@ function MentorProfileEdit() {
       const result = await res.json();
       if (!res.ok) throw new Error(result.message || 'Failed to verify code');
       setFormData(prev => ({ ...prev, mentor_email: newEmailInput }));
-      toast({ title: 'Email updated', description: `Your email has been changed to ${newEmailInput}.` });
-      setEmailChangeStep('success');
-      setTimeout(() => handleCancelEmailChange(), 2000);
+
+      // Changing the Firebase Auth email invalidates the current session token,
+      // so refreshing the local user here can throw (e.g. auth/user-token-expired).
+      // That's expected — prompt for a fresh login instead of surfacing the raw error.
+      try {
+        const { auth } = await import('@/lib/firebase');
+        await auth.currentUser?.reload();
+        await refreshUser();
+        toast({ title: 'Email updated', description: `Your email has been changed to ${newEmailInput}.` });
+        setEmailChangeStep('success');
+        setTimeout(() => handleCancelEmailChange(), 2000);
+      } catch {
+        toast({ title: 'Email updated — please log in again', description: `Your email has been changed to ${newEmailInput}. For security, please log in again.` });
+        setEmailChangeStep('success');
+        setTimeout(async () => {
+          const { auth } = await import('@/lib/firebase');
+          await auth.signOut();
+          router.push('/login');
+        }, 2000);
+      }
     } catch (err) {
       toast({ variant: 'destructive', title: 'Verification failed', description: err instanceof Error ? err.message : 'Failed to verify code.' });
     } finally { setIsVerifyingCode(false); }

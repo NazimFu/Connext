@@ -6,20 +6,22 @@
 // neutral grayscale, minimal semantic colors. Left = identity summary,
 // right = editable section cards. All logic/data flow unchanged.
 
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useRequireAuth } from "@/hooks/use-auth"
+import { useAuth, useRequireAuth } from "@/hooks/use-auth"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Loader2, Eye, Upload, CheckCircle2 } from "lucide-react"
+import { Loader2, Eye, Upload, CheckCircle2, AlertCircle, Clock } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useEffect, useState } from 'react'
 import { motion } from "framer-motion"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter,
-    DialogHeader, DialogTitle,
+    DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { TimezoneSelector } from "@/components/ui/timezone-selector"
 import { DEFAULT_TIMEZONE, TIMEZONE_OPTIONS } from "@/lib/timezone"
 
@@ -60,7 +62,9 @@ function FieldRow({ label, value, onAdd }: { label: string; value?: string; onAd
 
 export default function EditProfilePage() {
     const { user, isLoading } = useRequireAuth('mentee');
+    const { refreshUser } = useAuth();
     const { toast } = useToast();
+    const router = useRouter();
 
     const [formData, setFormData] = useState({ name: '', email: '', linkedin: '', github: '', cv_link: '' });
     const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
@@ -69,6 +73,20 @@ export default function EditProfilePage() {
     const [isUploadingCV, setIsUploadingCV] = useState(false);
     const [allowCVShare, setAllowCVShare] = useState(false);
     const [basicInfoOpen, setBasicInfoOpen] = useState(false);
+
+    const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+    const [newEmailInput, setNewEmailInput] = useState('');
+    const [verificationCode, setVerificationCode] = useState('');
+    const [emailChangeStep, setEmailChangeStep] = useState<'input' | 'verify' | 'success'>('input');
+    const [isSendingCode, setIsSendingCode] = useState(false);
+    const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+    const [countdown, setCountdown] = useState(0);
+    const [canResend, setCanResend] = useState(true);
+
+    useEffect(() => {
+        if (countdown > 0) { const t = setTimeout(() => setCountdown(c => c - 1), 1000); return () => clearTimeout(t); }
+        else if (countdown === 0 && !canResend) setCanResend(true);
+    }, [countdown, canResend]);
 
     useEffect(() => {
         if (user) {
@@ -109,11 +127,73 @@ export default function EditProfilePage() {
                 body: JSON.stringify({ id: userId, ...formData, allowCVShare, timezone }),
             });
             if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.message || 'Failed to update profile'); }
+            const { auth } = await import('@/lib/firebase');
+            await auth.currentUser?.reload();
+            await refreshUser();
             toast({ title: 'Profile updated', description: 'Your profile has been saved.' });
         } catch (error) {
             toast({ title: 'Error', description: 'Failed to update profile. Please try again.', variant: 'destructive' });
         } finally { setIsSaving(false); }
     };
+
+    const handleSendVerificationCode = async () => {
+        if (!newEmailInput.trim()) { toast({ variant: 'destructive', title: 'Error', description: 'Please enter a new email address.' }); return; }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(newEmailInput)) { toast({ variant: 'destructive', title: 'Invalid email', description: 'Please enter a valid email address.' }); return; }
+        if (newEmailInput.toLowerCase() === formData.email.toLowerCase()) { toast({ variant: 'destructive', title: 'Same email', description: 'New email must be different from your current email.' }); return; }
+        const userId = (user as any).menteeUID || user?.id;
+        setIsSendingCode(true);
+        try {
+            const res = await fetch('/api/mentee/send-verification-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ menteeId: userId, currentEmail: formData.email, newEmail: newEmailInput }) });
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.message || 'Failed to send verification code');
+            toast({ title: 'Code sent', description: `A 6-digit code was sent to ${newEmailInput}.` });
+            setEmailChangeStep('verify'); setCountdown(300); setCanResend(false);
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'Error', description: err instanceof Error ? err.message : 'Failed to send code.' });
+        } finally { setIsSendingCode(false); }
+    };
+
+    const handleVerifyEmailCode = async () => {
+        if (!verificationCode.trim() || verificationCode.length !== 6) { toast({ variant: 'destructive', title: 'Invalid code', description: 'Please enter the 6-digit code.' }); return; }
+        const userId = (user as any).menteeUID || user?.id;
+        setIsVerifyingCode(true);
+        try {
+            const res = await fetch('/api/mentee/verify-email-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ menteeId: userId, newEmail: newEmailInput, code: verificationCode.trim() }) });
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.message || 'Failed to verify code');
+            setFormData(prev => ({ ...prev, email: newEmailInput }));
+
+            // Changing the Firebase Auth email invalidates the current session token,
+            // so refreshing the local user here can throw (e.g. auth/user-token-expired).
+            // That's expected — prompt for a fresh login instead of surfacing the raw error.
+            try {
+                const { auth } = await import('@/lib/firebase');
+                await auth.currentUser?.reload();
+                await refreshUser();
+                toast({ title: 'Email updated', description: `Your email has been changed to ${newEmailInput}.` });
+                setEmailChangeStep('success');
+                setTimeout(() => handleCancelEmailChange(), 2000);
+            } catch {
+                toast({ title: 'Email updated — please log in again', description: `Your email has been changed to ${newEmailInput}. For security, please log in again.` });
+                setEmailChangeStep('success');
+                setTimeout(async () => {
+                    const { auth } = await import('@/lib/firebase');
+                    await auth.signOut();
+                    router.push('/login');
+                }, 2000);
+            }
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'Verification failed', description: err instanceof Error ? err.message : 'Failed to verify code.' });
+        } finally { setIsVerifyingCode(false); }
+    };
+
+    const handleCancelEmailChange = () => {
+        setEmailDialogOpen(false); setNewEmailInput(''); setVerificationCode('');
+        setEmailChangeStep('input'); setCountdown(0); setCanResend(true);
+    };
+
+    const formatCountdown = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
     const handleCVUpload = async () => {
         if (!cvFile) { toast({ title: 'Error', description: 'Please select a PDF or DOCX file to upload.', variant: 'destructive' }); return; }
@@ -162,6 +242,59 @@ export default function EditProfilePage() {
         </Button>
     );
 
+    // Email change dialog (used from the "Edit basic info" card)
+    const EmailDialog = (
+        <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
+            <DialogTrigger asChild>
+                <button type="button" className="text-xs font-semibold text-amber-700 hover:text-amber-800 hover:underline">Change</button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Change email address</DialogTitle>
+                    <DialogDescription>
+                        {emailChangeStep === 'input' && 'Enter your new email address to receive a verification code.'}
+                        {emailChangeStep === 'verify' && 'Enter the 6-digit code sent to your new email.'}
+                        {emailChangeStep === 'success' && 'Email successfully updated.'}
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-3">
+                    <div className="rounded-xl bg-neutral-50 border border-neutral-200 p-3">
+                        <p className="text-xs text-neutral-500 mb-0.5">Current email</p>
+                        <p className="text-sm font-medium text-neutral-900 break-all">{formData.email}</p>
+                    </div>
+                    {emailChangeStep === 'input' && (
+                        <>
+                            <div className="space-y-1.5"><Label className={LABEL}>New email address</Label><Input type="email" placeholder="your.new.email@example.com" value={newEmailInput} onChange={(e) => setNewEmailInput(e.target.value)} className={INPUT} /></div>
+                            <Alert><AlertCircle className="h-4 w-4" /><AlertDescription className="text-sm">A 6-digit verification code will be sent to this email address.</AlertDescription></Alert>
+                        </>
+                    )}
+                    {emailChangeStep === 'verify' && (
+                        <>
+                            <div className="rounded-xl bg-neutral-50 border border-neutral-200 p-3 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" /><p className="text-sm font-medium text-neutral-900 break-all">{newEmailInput}</p></div>
+                            <div className="space-y-1.5"><Label className={LABEL}>Verification code</Label><Input type="text" placeholder="000000" maxLength={6} value={verificationCode} onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))} className="text-center text-2xl font-mono tracking-widest" /></div>
+                            <div className="flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-1.5"><Clock className="h-4 w-4 text-neutral-400" /><span className={countdown < 60 ? 'text-red-600 font-medium' : 'text-neutral-500 font-medium'}>{formatCountdown(countdown)}</span></div>
+                                <Button variant="link" size="sm" onClick={() => { setVerificationCode(''); handleSendVerificationCode(); }} disabled={!canResend || isSendingCode} className="text-neutral-700 h-auto p-0">{isSendingCode ? 'Sending…' : 'Resend code'}</Button>
+                            </div>
+                        </>
+                    )}
+                    {emailChangeStep === 'success' && (
+                        <div className="text-center py-6">
+                            <div className="mx-auto w-14 h-14 bg-emerald-50 rounded-full flex items-center justify-center mb-3"><CheckCircle2 className="h-8 w-8 text-emerald-600" /></div>
+                            <h3 className="text-base font-semibold text-neutral-900 mb-1">Email updated</h3>
+                            <p className="text-sm text-neutral-500 break-all">Changed to {newEmailInput}</p>
+                        </div>
+                    )}
+                </div>
+                <DialogFooter>
+                    {emailChangeStep === 'input' && (<><Button variant="outline" onClick={handleCancelEmailChange} disabled={isSendingCode}>Cancel</Button><Button onClick={handleSendVerificationCode} disabled={isSendingCode || !newEmailInput.trim()} className="bg-amber-600 hover:bg-amber-700 text-white">{isSendingCode ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sending…</> : 'Send code'}</Button></>)}
+                    {emailChangeStep === 'verify' && (<><Button variant="outline" onClick={handleCancelEmailChange} disabled={isVerifyingCode}>Cancel</Button><Button onClick={handleVerifyEmailCode} disabled={isVerifyingCode || verificationCode.length !== 6} className="bg-amber-600 hover:bg-amber-700 text-white">{isVerifyingCode ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Verifying…</> : 'Verify'}</Button></>)}
+                    {emailChangeStep === 'success' && <Button onClick={handleCancelEmailChange} className="w-full bg-amber-600 hover:bg-amber-700 text-white">Done</Button>}
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+
     // Edit basic info — holds the actual inputs (opened from the left card)
     const BasicInfoDialog = (
         <Dialog open={basicInfoOpen} onOpenChange={setBasicInfoOpen}>
@@ -176,8 +309,8 @@ export default function EditProfilePage() {
                         <Input id="name" name="name" value={formData.name} onChange={handleInputChange} placeholder="Enter your full name" className={INPUT} />
                     </div>
                     <div className="space-y-1.5">
-                        <Label htmlFor="email" className={LABEL}>Email address</Label>
-                        <Input id="email" name="email" type="email" value={formData.email} onChange={handleInputChange} placeholder="your.email@example.com" className={INPUT} />
+                        <div className="flex items-center justify-between"><Label className={LABEL}>Email address</Label>{EmailDialog}</div>
+                        <Input value={formData.email} disabled className="bg-neutral-50 border-neutral-200 text-neutral-500" />
                     </div>
                     <div className="space-y-1.5">
                         <Label htmlFor="linkedin" className={LABEL}>LinkedIn profile</Label>

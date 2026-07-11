@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { PatchOperation } from '@azure/cosmos';
+import { updateFirebaseAuthEmail } from '@/lib/server/firebase-admin';
 
 export async function PATCH(request: Request) {
   try {
@@ -31,6 +32,23 @@ export async function PATCH(request: Request) {
     }
 
     const operations: PatchOperation[] = [];
+    const currentEmail = String(existingMentee.email || existingMentee.mentee_email || '').trim().toLowerCase();
+    const nextEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+
+    if (nextEmail && nextEmail !== currentEmail) {
+      try {
+        await updateFirebaseAuthEmail(id, nextEmail);
+      } catch (firebaseError: any) {
+        console.error('Failed to update Firebase Auth email for mentee:', firebaseError);
+        return NextResponse.json(
+          {
+            message: firebaseError?.message || 'Failed to update Firebase Auth email',
+            error: process.env.NODE_ENV === 'development' ? String(firebaseError) : undefined,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     if (name && typeof name === 'string') {
       operations.push({ op: 'set', path: '/name', value: name });

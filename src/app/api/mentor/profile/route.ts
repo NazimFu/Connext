@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CosmosClient } from '@azure/cosmos';
+import { updateFirebaseAuthEmail } from '@/lib/server/firebase-admin';
 
 const cosmosClient = new CosmosClient({
   endpoint: process.env.COSMOS_DB_ENDPOINT!,
@@ -69,6 +70,24 @@ export async function PATCH(request: NextRequest) {
 
     const mentor = resources[0];
     const partitionKeyValue = mentor.mentorUID || mentor.id;
+
+    const currentEmail = String(mentor.mentor_email || '').trim().toLowerCase();
+    const nextEmail = typeof updateData.mentor_email === 'string' ? updateData.mentor_email.trim().toLowerCase() : '';
+
+    if (nextEmail && nextEmail !== currentEmail) {
+      try {
+        await updateFirebaseAuthEmail(mentor.mentorUID || mentor.id, nextEmail);
+      } catch (firebaseError: any) {
+        console.error('Failed to update Firebase Auth email for mentor:', firebaseError);
+        return NextResponse.json(
+          {
+            message: firebaseError?.message || 'Failed to update Firebase Auth email',
+            error: process.env.NODE_ENV === 'development' ? String(firebaseError) : undefined,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // Fields allowed to be updated (including timezone)
     const fieldsToUpdate = [
