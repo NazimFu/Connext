@@ -683,7 +683,7 @@ export default function InternalDashboard() {
               {reportDialog.action === "accept" ? "Accept Report" : reportDialog.action === "reject" ? "Reject Report" : reportDialog.action === "lift_ban" ? "Lift Ban" : "Reopen Report"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {reportDialog.action === "accept" ? "Accepting will immediately forfeit the cycle token and send an email notification." : reportDialog.action === "reject" ? "No penalty will be applied." : reportDialog.action === "lift_ban" ? "Unfreezes the account. The report stays marked as accepted." : "Reopen for further review."}
+              {reportDialog.action === "accept" ? "Accepting will immediately forfeit the cycle token and send an email notification." : reportDialog.action === "reject" ? "No penalty will be applied." : reportDialog.action === "lift_ban" ? "Unfreezes the account and resumes the token cycle from where it was. The report stays marked as accepted; the mentee still needs to submit feedback and wait out the cooldown if they haven't already." : "Reopen for further review."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-3 space-y-3">

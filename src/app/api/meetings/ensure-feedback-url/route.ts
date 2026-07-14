@@ -2,7 +2,11 @@
 //
 // Called when a user clicks "Fill Feedback Form" and feedbackFormUrl is absent.
 // Generates a signed URL (same logic as send-feedback cron), persists it to
-// both mentor and mentee/requester documents, then returns it to the client.
+// the requester's own document (source of truth), then best-effort mirrors it
+// to the mentor's document if that mentor account still exists. Looking the
+// meeting up via the REQUESTER's own scheduling array — rather than scanning
+// every mentor's document — means this keeps working even after the mentor
+// has deleted their account.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
@@ -38,38 +42,57 @@ export async function POST(request: NextRequest) {
     const mentorContainer = database.container('mentor');
     const menteeContainer = database.container('mentee');
 
-    // ── 1. Find the meeting in the mentor container ──────────────────────────
-    const { resources: allMentors } = await mentorContainer.items
-      .query({ query: 'SELECT * FROM c' })
-      .fetchAll();
+    // ── 1. Find the meeting on the REQUESTER's own document ─────────────────
+    // This always exists regardless of whether the mentor's account still does.
+    let requesterDoc: any = null;
+    let requesterContainer: any = null;
+    let requesterScheduleIdx = -1;
 
-    let mentorDoc: any = null;
-    let mentorMeetingIdx = -1;
+    try {
+      const { resource: menteeDoc } = await menteeContainer.item(userId, userId).read();
+      if (menteeDoc && Array.isArray(menteeDoc.scheduling)) {
+        const idx = menteeDoc.scheduling.findIndex((s: any) => s.meetingId === meetingId);
+        if (idx !== -1) {
+          requesterDoc = menteeDoc;
+          requesterContainer = menteeContainer;
+          requesterScheduleIdx = idx;
+        }
+      }
+    } catch (err: any) {
+      if (err.code !== 404) throw err;
+    }
 
-    for (const m of allMentors) {
-      if (!Array.isArray(m.scheduling)) continue;
-      const idx = m.scheduling.findIndex((s: any) => s.meetingId === meetingId);
-      if (idx !== -1) {
-        mentorDoc = m;
-        mentorMeetingIdx = idx;
-        break;
+    if (!requesterDoc) {
+      // Fall back: mentor acting as mentee.
+      try {
+        const { resource: mentorAsRequester } = await mentorContainer.item(userId, userId).read();
+        if (mentorAsRequester && Array.isArray(mentorAsRequester.scheduling)) {
+          const idx = mentorAsRequester.scheduling.findIndex((s: any) => s.meetingId === meetingId);
+          if (idx !== -1) {
+            requesterDoc = mentorAsRequester;
+            requesterContainer = mentorContainer;
+            requesterScheduleIdx = idx;
+          }
+        }
+      } catch (err: any) {
+        if (err.code !== 404) throw err;
       }
     }
 
-    if (!mentorDoc || mentorMeetingIdx === -1) {
+    if (!requesterDoc || requesterScheduleIdx === -1) {
       return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
     }
 
-    const mentorMeeting = mentorDoc.scheduling[mentorMeetingIdx];
+    const requesterMeeting = requesterDoc.scheduling[requesterScheduleIdx];
 
     // Guard: meeting must be accepted and not cancelled
-    if (mentorMeeting.decision !== 'accepted') {
+    if (requesterMeeting.decision !== 'accepted') {
       return NextResponse.json(
         { error: 'Meeting is not accepted' },
         { status: 409 }
       );
     }
-    const ns = String(mentorMeeting.scheduled_status || '').toLowerCase();
+    const ns = String(requesterMeeting.scheduled_status || '').toLowerCase();
     if (ns === 'cancelled' || ns === 'canceled') {
       return NextResponse.json(
         { error: 'Meeting is cancelled' },
@@ -82,8 +105,8 @@ export async function POST(request: NextRequest) {
     // Use convertMeetingTime to correctly interpret them as Malaysia wall-clock
     // time rather than browser/server local time.
     const { utcDate: meetingUtcDate } = convertMeetingTime(
-      mentorMeeting.date,
-      mentorMeeting.time,
+      requesterMeeting.date,
+      requesterMeeting.time,
       'Asia/Kuala_Lumpur'
     );
 
@@ -102,24 +125,32 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 2. Reuse existing URL if already generated ───────────────────────────
-    if (mentorMeeting.feedbackFormUrl && mentorMeeting.feedbackToken) {
+    if (requesterMeeting.feedbackFormUrl && requesterMeeting.feedbackToken) {
       return NextResponse.json({
         success: true,
-        feedbackFormUrl: mentorMeeting.feedbackFormUrl,
+        feedbackFormUrl: requesterMeeting.feedbackFormUrl,
         cached: true,
       });
     }
 
     // ── 3. Generate a new signed link ────────────────────────────────────────
+    const mentorUid = requesterMeeting.mentorUID;
+    if (!mentorUid) {
+      return NextResponse.json(
+        { error: 'This meeting is missing its mentor reference and cannot generate a feedback link.' },
+        { status: 500 }
+      );
+    }
+
     let signedLink: { feedbackToken: string; formUrl: string };
     try {
       signedLink = await buildSignedLink({
         meetingId,
-        mentorUid: mentorMeeting.mentorUID,
-        menteeName: mentorMeeting.mentee_name || 'Mentee',
-        mentorName: mentorMeeting.mentor_name || 'Mentor',
-        sessionDate: mentorMeeting.date,
-        sessionTime: mentorMeeting.time,
+        mentorUid,
+        menteeName: requesterMeeting.mentee_name || requesterDoc.mentee_name || requesterDoc.name || requesterDoc.mentor_name || 'Mentee',
+        mentorName: requesterMeeting.mentor_name || 'Mentor',
+        sessionDate: requesterMeeting.date,
+        sessionTime: requesterMeeting.time,
         now,
       });
     } catch (err: any) {
@@ -133,65 +164,44 @@ export async function POST(request: NextRequest) {
     const { feedbackToken, formUrl } = signedLink;
     const deliveredAt = now.toISOString();
 
-    // ── 4. Persist to mentor document ────────────────────────────────────────
-    mentorDoc.scheduling[mentorMeetingIdx].feedbackToken = feedbackToken;
-    mentorDoc.scheduling[mentorMeetingIdx].feedbackFormUrl = formUrl;
-    mentorDoc.scheduling[mentorMeetingIdx].feedbackFormDelivered = true;
-    mentorDoc.scheduling[mentorMeetingIdx].feedbackFormDeliveredAt = deliveredAt;
+    // ── 4. Persist to the requester's own document (source of truth) ────────
+    requesterDoc.scheduling[requesterScheduleIdx].feedbackToken = feedbackToken;
+    requesterDoc.scheduling[requesterScheduleIdx].feedbackFormUrl = formUrl;
+    requesterDoc.scheduling[requesterScheduleIdx].feedbackFormDelivered = true;
+    requesterDoc.scheduling[requesterScheduleIdx].feedbackFormDeliveredAt = deliveredAt;
 
-    await mentorContainer.item(mentorDoc.id, mentorDoc.id).replace(mentorDoc);
-    console.log(`[ensure-feedback-url] Saved feedbackFormUrl to mentor doc for meeting ${meetingId}`);
+    await requesterContainer.item(requesterDoc.id, requesterDoc.id).replace(requesterDoc);
+    console.log(`[ensure-feedback-url] Saved feedbackFormUrl to requester doc for meeting ${meetingId}`);
 
-    // ── 5. Find requester (mentee or mentor-as-mentee) and persist ───────────
-    const menteeUid = mentorMeeting.menteeUID;
-
-    const findAndPersistRequester = async () => {
-      // Try mentee container first
+    // ── 5. Best-effort mirror to the mentor's document, if it still exists ──
+    (async () => {
       try {
-        const { resource: menteeDoc } = await menteeContainer
-          .item(menteeUid, menteeUid)
-          .read();
+        const { resources: mentorMatches } = await mentorContainer.items
+          .query({
+            query: 'SELECT * FROM c WHERE c.id = @id OR c.mentorUID = @id',
+            parameters: [{ name: '@id', value: mentorUid }],
+          })
+          .fetchAll();
 
-        if (menteeDoc && Array.isArray(menteeDoc.scheduling)) {
-          const idx = menteeDoc.scheduling.findIndex(
-            (s: any) => s.meetingId === meetingId
-          );
-          if (idx !== -1) {
-            menteeDoc.scheduling[idx].feedbackToken = feedbackToken;
-            menteeDoc.scheduling[idx].feedbackFormUrl = formUrl;
-            menteeDoc.scheduling[idx].feedbackFormDelivered = true;
-            menteeDoc.scheduling[idx].feedbackFormDeliveredAt = deliveredAt;
-            await menteeContainer.item(menteeDoc.id, menteeDoc.id).replace(menteeDoc);
-            console.log(`[ensure-feedback-url] Saved feedbackFormUrl to mentee doc for meeting ${meetingId}`);
-            return;
-          }
-        }
-      } catch (err: any) {
-        if (err.code !== 404) throw err;
-      }
-
-      // Fall back: mentor acting as mentee
-      for (const m of allMentors) {
-        if (m.id === mentorDoc.id || !Array.isArray(m.scheduling)) continue;
-        const idx = m.scheduling.findIndex((s: any) => s.meetingId === meetingId);
-        if (idx !== -1) {
-          m.scheduling[idx].feedbackToken = feedbackToken;
-          m.scheduling[idx].feedbackFormUrl = formUrl;
-          m.scheduling[idx].feedbackFormDelivered = true;
-          m.scheduling[idx].feedbackFormDeliveredAt = deliveredAt;
-          await mentorContainer.item(m.id, m.id).replace(m);
-          console.log(`[ensure-feedback-url] Saved feedbackFormUrl to mentor-as-mentee doc for meeting ${meetingId}`);
+        const mentorDoc = mentorMatches[0];
+        if (!mentorDoc || !Array.isArray(mentorDoc.scheduling)) {
+          console.log(`[ensure-feedback-url] Mentor ${mentorUid} no longer exists — skipping mentor-side persist.`);
           return;
         }
+
+        const idx = mentorDoc.scheduling.findIndex((s: any) => s.meetingId === meetingId);
+        if (idx === -1) return;
+
+        mentorDoc.scheduling[idx].feedbackToken = feedbackToken;
+        mentorDoc.scheduling[idx].feedbackFormUrl = formUrl;
+        mentorDoc.scheduling[idx].feedbackFormDelivered = true;
+        mentorDoc.scheduling[idx].feedbackFormDeliveredAt = deliveredAt;
+        await mentorContainer.item(mentorDoc.id, mentorDoc.id).replace(mentorDoc);
+        console.log(`[ensure-feedback-url] Saved feedbackFormUrl to mentor doc for meeting ${meetingId}`);
+      } catch (err) {
+        console.error('[ensure-feedback-url] Failed to persist to mentor doc (non-fatal):', err);
       }
-
-      console.warn(`[ensure-feedback-url] Could not find requester doc for meeting ${meetingId}`);
-    };
-
-    // Persist to requester in background (don't block the response)
-    findAndPersistRequester().catch((err) =>
-      console.error('[ensure-feedback-url] Failed to persist to requester:', err)
-    );
+    })().catch(() => {});
 
     return NextResponse.json({
       success: true,

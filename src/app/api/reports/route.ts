@@ -225,12 +225,36 @@ export async function PATCH(request: Request) {
       await setAccountFrozen(requester, !!bannedIsInMentorContainer, false);
 
       const liftedAt = new Date().toISOString();
-      const banLiftOperations: PatchOperation[] = [
-        { op: 'add', path: `/scheduling/${bannedScheduleIndex}/mentor_report/ban_lifted_at`, value: liftedAt },
-        { op: 'add', path: `/scheduling/${bannedScheduleIndex}/mentor_report/ban_lifted_by`, value: reviewer },
-      ];
+      const banLiftOperations: PatchOperation[] = [];
 
       if (bannedScheduleIndex > -1) {
+        banLiftOperations.push(
+          { op: 'add', path: `/scheduling/${bannedScheduleIndex}/mentor_report/ban_lifted_at`, value: liftedAt },
+          { op: 'add', path: `/scheduling/${bannedScheduleIndex}/mentor_report/ban_lifted_by`, value: reviewer }
+        );
+      }
+
+      // Undo the token forfeiture caused by THIS report, if it's still in that
+      // state (skip if it already moved on, e.g. already replenished). The
+      // cooldown timer resumes from wherever it was — tokenUsedAt,
+      // feedbackSubmittedAt and feedbackValid are left untouched — so the
+      // mentee still has to submit feedback and wait out the cooldown.
+      const tokenCycle = requester.token_cycle;
+      const tokenCycleRestored =
+        tokenCycle?.meetingId === meetingId &&
+        tokenCycle?.status === 'forfeited' &&
+        tokenCycle?.mentorReported === true;
+
+      if (tokenCycleRestored) {
+        banLiftOperations.push(
+          { op: 'add', path: '/token_cycle/status', value: 'pending' },
+          { op: 'add', path: '/token_cycle/mentorReported', value: false },
+          { op: 'add', path: '/token_cycle/reportRecordedAt', value: null },
+          { op: 'add', path: '/token_cycle/evaluatedAt', value: null }
+        );
+      }
+
+      if (banLiftOperations.length > 0) {
         if (bannedIsInMentorContainer) {
           await mentorContainer.item(requester.id, requester.id).patch(banLiftOperations);
         } else {
@@ -248,7 +272,9 @@ export async function PATCH(request: Request) {
 
       return NextResponse.json({
         success: true,
-        message: 'Ban lifted — report remains accepted',
+        message: tokenCycleRestored
+          ? 'Ban lifted — report remains accepted. Token cycle resumed; the mentee still needs to submit feedback and wait out the cooldown.'
+          : 'Ban lifted — report remains accepted',
       });
     }
 

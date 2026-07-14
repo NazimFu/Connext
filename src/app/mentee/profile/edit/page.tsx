@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth, useRequireAuth } from "@/hooks/use-auth"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Loader2, Eye, Upload, CheckCircle2, AlertCircle, Clock } from "lucide-react"
+import { Loader2, Eye, Upload, CheckCircle2, AlertCircle, Clock, Trash2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useEffect, useState } from 'react'
 import { motion } from "framer-motion"
@@ -62,7 +62,7 @@ function FieldRow({ label, value, onAdd }: { label: string; value?: string; onAd
 
 export default function EditProfilePage() {
     const { user, isLoading } = useRequireAuth('mentee');
-    const { refreshUser } = useAuth();
+    const { refreshUser, logout } = useAuth();
     const { toast } = useToast();
     const router = useRouter();
 
@@ -73,6 +73,10 @@ export default function EditProfilePage() {
     const [isUploadingCV, setIsUploadingCV] = useState(false);
     const [allowCVShare, setAllowCVShare] = useState(false);
     const [basicInfoOpen, setBasicInfoOpen] = useState(false);
+
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
     const [emailDialogOpen, setEmailDialogOpen] = useState(false);
     const [newEmailInput, setNewEmailInput] = useState('');
@@ -194,6 +198,30 @@ export default function EditProfilePage() {
     };
 
     const formatCountdown = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+    const handleDeleteAccount = async () => {
+        const userId = (user as any).menteeUID || user?.id;
+        if (!userId) { toast({ title: 'Error', description: 'User ID not found.', variant: 'destructive' }); return; }
+        if (deleteConfirmText.trim() !== 'DELETE') return;
+        setIsDeletingAccount(true);
+        try {
+            const res = await fetch('/api/mentee/delete-account', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: userId }),
+            });
+            const result = await res.json();
+            if (!res.ok) throw new Error(result.message || 'Failed to delete account');
+            toast({ title: 'Account deleted', description: 'Your account and data have been removed.' });
+            setDeleteDialogOpen(false);
+            setTimeout(async () => {
+                await logout();
+                router.push('/login');
+            }, 1500);
+        } catch (err) {
+            toast({ variant: 'destructive', title: 'Could not delete account', description: err instanceof Error ? err.message : 'Please try again.' });
+        } finally { setIsDeletingAccount(false); }
+    };
 
     const handleCVUpload = async () => {
         if (!cvFile) { toast({ title: 'Error', description: 'Please select a PDF or DOCX file to upload.', variant: 'destructive' }); return; }
@@ -431,14 +459,57 @@ export default function EditProfilePage() {
                         </div>
                     </SectionCard>
 
+                    {/* Danger zone */}
+                    <section className="bg-white rounded-2xl border border-red-200 shadow-sm p-6 sm:p-8">
+                        <div className="border-b border-red-100 pb-4 mb-6">
+                            <h2 className="text-lg font-bold text-red-700">Danger zone</h2>
+                            <p className="text-sm text-neutral-500 mt-1">Permanently delete your account and data.</p>
+                        </div>
+                        <div className="flex items-center justify-between gap-4 flex-wrap">
+                            <p className="text-sm text-neutral-600 max-w-md">Deleting your account removes your profile and login permanently. This cannot be undone.</p>
+                            <Button variant="outline" onClick={() => setDeleteDialogOpen(true)} className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700">
+                                <Trash2 className="h-4 w-4 mr-1.5" />Delete account
+                            </Button>
+                        </div>
+                    </section>
+
                     <div className="flex items-center justify-end gap-3 pb-2">
-                        
+
                         {SaveButton}
                     </div>
                 </div>
             </motion.div>
 
             {BasicInfoDialog}
+
+            <Dialog open={deleteDialogOpen} onOpenChange={(open) => { setDeleteDialogOpen(open); if (!open) setDeleteConfirmText(''); }}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="text-red-700">Delete your account?</DialogTitle>
+                        <DialogDescription>This permanently deletes your profile, CV, and login from our systems. This cannot be undone.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <Alert variant="destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertDescription className="text-sm space-y-1.5">
+                                <p>Upcoming meetings will be cancelled and the mentor notified by email. Pending requests you sent are simply withdrawn, no email.</p>
+                                <p>If you have a past meeting with an unsubmitted feedback form, you must submit it before you can delete your account.</p>
+                                <p>Your profile data will be removed from our database and your login will be deleted — you won't be able to log in again with this email.</p>
+                            </AlertDescription>
+                        </Alert>
+                        <div className="space-y-1.5">
+                            <Label className={LABEL}>Type <span className="font-mono font-semibold">DELETE</span> to confirm</Label>
+                            <Input value={deleteConfirmText} onChange={(e) => setDeleteConfirmText(e.target.value)} placeholder="DELETE" className={INPUT} />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={isDeletingAccount}>Cancel</Button>
+                        <Button onClick={handleDeleteAccount} disabled={isDeletingAccount || deleteConfirmText.trim() !== 'DELETE'} className="bg-red-600 hover:bg-red-700 text-white">
+                            {isDeletingAccount ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Deleting…</> : 'Delete my account'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }

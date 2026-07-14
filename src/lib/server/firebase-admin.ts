@@ -22,3 +22,17 @@ export async function updateFirebaseAuthEmail(uid: string, email: string) {
   const app = getFirebaseAdminApp();
   return getAuth(app).updateUser(uid, { email });
 }
+
+export async function deleteFirebaseAuthUser(uid: string) {
+  const app = getFirebaseAdminApp();
+  try {
+    return await getAuth(app).deleteUser(uid);
+  } catch (error: any) {
+    // Already gone from Firebase Auth — treat as success so account deletion
+    // isn't blocked by a previously-orphaned Cosmos record.
+    if (error?.code === 'auth/user-not-found') {
+      return;
+    }
+    throw error;
+  }
+}

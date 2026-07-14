@@ -199,20 +199,22 @@ export default function MenteeNoticesPage() {
           });
         }
 
+        // Mutually exclusive: shows "Feedback Due" until submitted, then
+        // switches to "Completed" — never both at once for the same meeting.
         if (request.decision === 'accepted' && now.getTime() >= twoHoursAfterMs) {
           const hasFeedback = !!request.feedbackFormSent;
 
-          taskItems.push({
-            ...baseTask,
-            id: `past-meeting-${request.meetingId}`,
-            type: 'past_meeting',
-            title: titleDateTime,
-            description: `Meeting with ${request.mentor_name}`,
-            hasFeedback,
-            feedbackFormUrl: request.feedbackFormUrl,
-          });
-
-          if (!hasFeedback) {
+          if (hasFeedback) {
+            taskItems.push({
+              ...baseTask,
+              id: `past-meeting-${request.meetingId}`,
+              type: 'past_meeting',
+              title: titleDateTime,
+              description: `Meeting with ${request.mentor_name}`,
+              hasFeedback,
+              feedbackFormUrl: request.feedbackFormUrl,
+            });
+          } else {
             taskItems.push({
               ...baseTask,
               id: `feedback-${request.meetingId}`,

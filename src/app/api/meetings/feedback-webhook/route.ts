@@ -7,6 +7,7 @@ import {
   isGoogleFormFeedbackRecord,
   sanitizeSubmittedResponses,
 } from '@/lib/meeting-feedback';
+import { locateMeeting } from '@/lib/server/meeting-utils';
 import { verifyFeedbackToken } from '@/lib/server/feedback-form';
 import { canAcceptFeedbackSubmission } from '@/lib/token-cycle';
 
@@ -102,7 +103,7 @@ const syncPendingTokenCycle = (
   // Check if feedback submission is within acceptable timing window (2 hours after meeting)
   const timezone = user.timezone || 'UTC';
   const feedbackCheckResult = canAcceptFeedbackSubmission(user.token_cycle, timezone, new Date(submittedAt));
-  
+
   if (!feedbackCheckResult.accepted) {
     console.log(`[Feedback Webhook] Feedback not accepted: ${feedbackCheckResult.reason}`);
     throw new Error(`Feedback submission rejected: ${feedbackCheckResult.reason}`);
@@ -111,58 +112,8 @@ const syncPendingTokenCycle = (
   user.token_cycle.feedbackSubmittedAt = submittedAt;
   user.token_cycle.feedbackValid = true;
   user.token_cycle.feedbackVerificationSource = 'google-form-webhook';
-  
+
   console.log(`[Feedback Webhook] Token cycle updated. Feedback valid, submitted at: ${submittedAt}`);
-};
-
-const findRequesterRecord = async (
-  mentorContainer: any,
-  menteeContainer: any,
-  menteeUid: string,
-  meetingId: string
-) => {
-  try {
-    const { resource: menteeDoc } = await menteeContainer.item(menteeUid, menteeUid).read();
-    if (
-      menteeDoc?.scheduling &&
-      Array.isArray(menteeDoc.scheduling) &&
-      menteeDoc.scheduling.some((meeting: any) => meeting.meetingId === meetingId)
-    ) {
-      return {
-        container: menteeContainer,
-        doc: menteeDoc,
-      };
-    }
-  } catch (error: any) {
-    if (error?.code !== 404) {
-      throw error;
-    }
-  }
-
-  const requesterQuerySpec = {
-    query: 'SELECT * FROM c WHERE c.mentee_id = @menteeUid',
-    parameters: [{ name: '@menteeUid', value: menteeUid }],
-  };
-
-  const { resources: requesterMentors } = await mentorContainer.items
-    .query(requesterQuerySpec)
-    .fetchAll();
-
-  const requesterMentor = requesterMentors.find(
-    (candidate: any) =>
-      candidate?.scheduling &&
-      Array.isArray(candidate.scheduling) &&
-      candidate.scheduling.some((meeting: any) => meeting.meetingId === meetingId)
-  );
-
-  if (!requesterMentor) {
-    return null;
-  }
-
-  return {
-    container: mentorContainer,
-    doc: requesterMentor,
-  };
 };
 
 export async function POST(request: NextRequest) {
@@ -191,118 +142,62 @@ export async function POST(request: NextRequest) {
 
     const mentorContainer = database.container('mentor');
     const menteeContainer = database.container('mentee');
-    const mentorQuerySpec = {
-      query: 'SELECT * FROM c WHERE c.mentorUID = @mentorUid OR c.id = @mentorUid',
-      parameters: [{ name: '@mentorUid', value: verification.payload.mentorUid }],
-    };
 
-    const { resources: mentors } = await mentorContainer.items.query(mentorQuerySpec).fetchAll();
-    const mentorDoc =
-      mentors.find((mentor: any) => mentor.id === verification.payload.mentorUid) ??
-      mentors.find((mentor: any) => mentor.mentorUID === verification.payload.mentorUid) ??
-      mentors[0];
-
-    if (!mentorDoc?.scheduling || !Array.isArray(mentorDoc.scheduling)) {
-      return NextResponse.json(
-        { message: 'Mentor schedule not found' },
-        { status: 404 }
-      );
+    // Locate the meeting by ID alone — this finds the requester's copy even
+    // if the mentor's account has since been deleted (locateMeeting searches
+    // both containers independently and tolerates either side being missing).
+    const lookup = await locateMeeting(verification.payload.meetingId);
+    if (!lookup?.meeting) {
+      return NextResponse.json({ message: 'Meeting not found' }, { status: 404 });
     }
 
-    const scheduleIndex = mentorDoc.scheduling.findIndex(
-      (meeting: any) => meeting.meetingId === verification.payload.meetingId
-    );
+    const { mentor: mentorDoc, mentorScheduleIndex, mentee: requesterDoc, menteeScheduleIndex, menteeIsInMentorContainer } = lookup;
 
-    if (scheduleIndex === -1) {
-      return NextResponse.json(
-        { message: 'Meeting not found' },
-        { status: 404 }
-      );
+    if (!requesterDoc || !Array.isArray(requesterDoc.scheduling) || menteeScheduleIndex < 0) {
+      return NextResponse.json({ message: 'Requester schedule not found' }, { status: 404 });
     }
 
-    const meeting = mentorDoc.scheduling[scheduleIndex];
-    if (meeting.decision !== 'accepted' || meeting.scheduled_status === 'cancelled') {
+    const requesterMeeting = requesterDoc.scheduling[menteeScheduleIndex];
+
+    // Defense in depth: the token was signed for a specific mentor — if the
+    // requester's own copy disagrees (shouldn't happen), reject it.
+    if (requesterMeeting.mentorUID && requesterMeeting.mentorUID !== verification.payload.mentorUid) {
+      return NextResponse.json({ message: 'Feedback token does not match this meeting' }, { status: 400 });
+    }
+
+    if (requesterMeeting.decision !== 'accepted' || requesterMeeting.scheduled_status === 'cancelled') {
       return NextResponse.json(
         { message: 'Meeting is not eligible for mentor feedback notification' },
         { status: 409 }
       );
     }
 
-    if (!meeting.menteeUID) {
-      return NextResponse.json(
-        { message: 'Meeting requester is missing for this session' },
-        { status: 400 }
-      );
-    }
+    const requesterContainer = menteeIsInMentorContainer ? mentorContainer : menteeContainer;
+    const mentorMeeting = mentorDoc && mentorScheduleIndex > -1 ? mentorDoc.scheduling[mentorScheduleIndex] : null;
 
-    const requesterRecord = await findRequesterRecord(
-      mentorContainer,
-      menteeContainer,
-      meeting.menteeUID,
-      verification.payload.meetingId
-    );
-
-    if (!requesterRecord?.doc?.scheduling || !Array.isArray(requesterRecord.doc.scheduling)) {
-      return NextResponse.json(
-        { message: 'Requester schedule not found' },
-        { status: 404 }
-      );
-    }
-
-    const requesterMeetingIndex = requesterRecord.doc.scheduling.findIndex(
-      (scheduledMeeting: any) => scheduledMeeting.meetingId === verification.payload.meetingId
-    );
-
-    if (requesterMeetingIndex === -1) {
-      return NextResponse.json(
-        { message: 'Requester meeting not found' },
-        { status: 404 }
-      );
-    }
-
-    const canonicalFeedbackRecord = isGoogleFormFeedbackRecord(meeting.feedback_form)
-      ? meeting.feedback_form
-      : isGoogleFormFeedbackRecord(requesterRecord.doc.scheduling[requesterMeetingIndex].feedback_form)
-        ? requesterRecord.doc.scheduling[requesterMeetingIndex].feedback_form
+    const canonicalFeedbackRecord = isGoogleFormFeedbackRecord(mentorMeeting?.feedback_form)
+      ? mentorMeeting!.feedback_form
+      : isGoogleFormFeedbackRecord(requesterMeeting.feedback_form)
+        ? requesterMeeting.feedback_form
         : buildMeetingFeedbackRecord('google_form', responses, submittedAt);
 
-    const mentorNeedsSubmissionSync =
-      !meeting.feedback_form || !meeting.feedbackFormSent || !meeting.feedbackFormSentAt;
-    const requesterMeeting = requesterRecord.doc.scheduling[requesterMeetingIndex];
+    // ── Sync the requester's own copy — this must succeed regardless of
+    // whether the mentor's account still exists, since it's what unblocks
+    // the requester's feedback obligation and their own account deletion. ──
     const requesterNeedsSubmissionSync =
-      !requesterMeeting.feedback_form ||
-      !requesterMeeting.feedbackFormSent ||
-      !requesterMeeting.feedbackFormSentAt;
+      !requesterMeeting.feedback_form || !requesterMeeting.feedbackFormSent || !requesterMeeting.feedbackFormSentAt;
 
-    if (mentorNeedsSubmissionSync || requesterNeedsSubmissionSync) {
+    if (requesterNeedsSubmissionSync) {
       try {
-        applyFeedbackSubmission(
-          mentorDoc.scheduling[scheduleIndex],
-          canonicalFeedbackRecord
-        );
-        if (!mentorDoc.scheduling[scheduleIndex].feedbackFormResponseId && responseId) {
-          mentorDoc.scheduling[scheduleIndex].feedbackFormResponseId = responseId;
+        applyFeedbackSubmission(requesterMeeting, canonicalFeedbackRecord);
+        if (!requesterMeeting.feedbackFormResponseId && responseId) {
+          requesterMeeting.feedbackFormResponseId = responseId;
         }
-        applyFeedbackSubmission(
-          requesterRecord.doc.scheduling[requesterMeetingIndex],
-          canonicalFeedbackRecord
-        );
-        if (!requesterRecord.doc.scheduling[requesterMeetingIndex].feedbackFormResponseId && responseId) {
-          requesterRecord.doc.scheduling[requesterMeetingIndex].feedbackFormResponseId = responseId;
-        }
-        
-        // This will throw if feedback timing is invalid
-        syncPendingTokenCycle(
-          requesterRecord.doc,
-          requesterRecord.doc.scheduling[requesterMeetingIndex],
-          verification.payload.meetingId,
-          canonicalFeedbackRecord.submittedAt
-        );
 
-        await requesterRecord.container
-          .item(requesterRecord.doc.id, requesterRecord.doc.id)
-          .replace(requesterRecord.doc);
-        await mentorContainer.item(mentorDoc.id, mentorDoc.id).replace(mentorDoc);
+        // This will throw if feedback timing is invalid
+        syncPendingTokenCycle(requesterDoc, requesterMeeting, verification.payload.meetingId, canonicalFeedbackRecord.submittedAt);
+
+        await requesterContainer.item(requesterDoc.id, requesterDoc.id).replace(requesterDoc);
       } catch (tokenCycleError: any) {
         console.error('[Feedback Webhook] Token cycle sync error:', tokenCycleError);
         // If the feedback is too early, reject the webhook
@@ -316,45 +211,60 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (meeting.mentorFeedbackNotifiedAt) {
-      return NextResponse.json({
-        success: true,
-        duplicate: true,
-        feedbackSubmittedAt: mentorDoc.scheduling[scheduleIndex].feedbackFormSentAt,
-        mentorFeedbackNotifiedAt: meeting.mentorFeedbackNotifiedAt,
-      });
+    // ── Mentor-side sync + notification email — best-effort only. If the
+    // mentor's account has been deleted there's no one left to notify, so we
+    // skip this without failing the request (the requester side already
+    // succeeded, which is what matters). ──
+    let mentorNotified = false;
+    if (mentorDoc && mentorScheduleIndex > -1 && mentorMeeting) {
+      try {
+        const mentorNeedsSubmissionSync =
+          !mentorMeeting.feedback_form || !mentorMeeting.feedbackFormSent || !mentorMeeting.feedbackFormSentAt;
+
+        if (mentorNeedsSubmissionSync) {
+          applyFeedbackSubmission(mentorMeeting, canonicalFeedbackRecord);
+          if (!mentorMeeting.feedbackFormResponseId && responseId) {
+            mentorMeeting.feedbackFormResponseId = responseId;
+          }
+          await mentorContainer.item(mentorDoc.id, mentorDoc.id).replace(mentorDoc);
+        }
+
+        if (mentorMeeting.mentorFeedbackNotifiedAt) {
+          mentorNotified = true;
+        } else {
+          const mentorEmail = requesterMeeting.mentor_email || mentorDoc.mentor_email;
+          if (mentorEmail) {
+            await sendEmail({
+              to: mentorEmail,
+              subject: `New feedback submitted for your session with ${requesterMeeting.mentee_name || 'your mentee'}`,
+              template: 'mentor-feedback-submitted',
+              data: {
+                mentorName: requesterMeeting.mentor_name || mentorDoc.mentor_name || 'there',
+                menteeName: requesterMeeting.mentee_name || 'A mentee',
+                date: requesterMeeting.date,
+                time: requesterMeeting.time,
+                timezone: mentorDoc.timezone || requesterMeeting.mentor_timezone || 'Asia/Kuala_Lumpur',
+                submittedAt: canonicalFeedbackRecord.submittedAt,
+                responses: canonicalFeedbackRecord.responses,
+              },
+            });
+
+            mentorMeeting.mentorFeedbackNotifiedAt = new Date().toISOString();
+            await mentorContainer.item(mentorDoc.id, mentorDoc.id).replace(mentorDoc);
+            mentorNotified = true;
+          }
+        }
+      } catch (mentorSyncError) {
+        console.error('[Feedback Webhook] Failed to sync/notify mentor (non-fatal — requester side already saved):', mentorSyncError);
+      }
+    } else {
+      console.log(`[Feedback Webhook] Mentor for meeting ${verification.payload.meetingId} no longer exists — skipping mentor sync/notification.`);
     }
-
-    const mentorEmail = meeting.mentor_email || mentorDoc.mentor_email;
-    if (!mentorEmail) {
-      return NextResponse.json(
-        { message: 'Mentor email is missing for this meeting' },
-        { status: 400 }
-      );
-    }
-
-    await sendEmail({
-      to: mentorEmail,
-      subject: `New feedback submitted for your session with ${meeting.mentee_name || 'your mentee'}`,
-      template: 'mentor-feedback-submitted',
-      data: {
-        mentorName: meeting.mentor_name || mentorDoc.mentor_name || 'there',
-        menteeName: meeting.mentee_name || 'A mentee',
-        date: meeting.date,
-        time: meeting.time,
-        timezone: mentorDoc.timezone || meeting.mentor_timezone || 'Asia/Kuala_Lumpur',
-        submittedAt: canonicalFeedbackRecord.submittedAt,
-        responses: canonicalFeedbackRecord.responses,
-      },
-    });
-
-    mentorDoc.scheduling[scheduleIndex].mentorFeedbackNotifiedAt = new Date().toISOString();
-    await mentorContainer.item(mentorDoc.id, mentorDoc.id).replace(mentorDoc);
 
     return NextResponse.json({
       success: true,
-      feedbackSubmittedAt: mentorDoc.scheduling[scheduleIndex].feedbackFormSentAt,
-      mentorFeedbackNotifiedAt: mentorDoc.scheduling[scheduleIndex].mentorFeedbackNotifiedAt,
+      feedbackSubmittedAt: requesterMeeting.feedbackFormSentAt,
+      mentorNotified,
     });
   } catch (error) {
     console.error('Failed to process feedback webhook:', error);

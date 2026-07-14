@@ -115,7 +115,23 @@ export default function MentorTasksPage() {
       ]);
       const mentorRequests: MeetingRequest[] = mentorRes.ok ? await mentorRes.json() : [];
       const menteeRequests: MeetingRequest[] = menteeRes.ok ? await menteeRes.json() : [];
-      const allRequests = [...mentorRequests, ...menteeRequests];
+
+      // Tag each request by which query actually returned it — this is the
+      // only reliable way to know the role, since `mentorUID` isn't always
+      // stored on a mentor's own scheduling entries (depends on which of the
+      // two meeting-creation endpoints made it). Trusting that field caused
+      // `userIsMentor` to come out false for the mentor's own meetings and
+      // spuriously add a second "feedback" card for them.
+      // Also dedupe by meetingId: the "menteeId" query (mentor acting as a
+      // requester elsewhere) can occasionally re-match a meeting already
+      // covered by the "mentorId" query when scheduling fields are sparse/legacy.
+      const mentorMeetingIds = new Set(mentorRequests.map((r) => r.meetingId));
+      const allRequests = [
+        ...mentorRequests.map((r) => ({ ...r, __asMentor: true as const })),
+        ...menteeRequests
+          .filter((r) => !mentorMeetingIds.has(r.meetingId))
+          .map((r) => ({ ...r, __asMentor: false as const })),
+      ];
 
       const taskItems: TaskItem[] = [];
       const now = new Date();
@@ -131,7 +147,7 @@ export default function MentorTasksPage() {
         const twoHoursAfterMs = meetingUtcMs + 2 * 60 * 60 * 1000;
         const nowMs = now.getTime();
 
-        const userIsMentor = request.mentorUID === user.id;
+        const userIsMentor = request.__asMentor;
         const displayName = userIsMentor ? request.mentee_name : request.mentor_name;
         const displayEmail = userIsMentor ? request.mentee_email : request.mentor_email;
 
@@ -181,19 +197,22 @@ export default function MentorTasksPage() {
           });
         }
 
+        // Mutually exclusive: a mentor's own meeting is always "Completed" (they
+        // never fill feedback). A requester's meeting shows "Feedback Due" until
+        // submitted, then switches to "Completed" — never both at once.
         if (nd === 'accepted' && nowMs >= twoHoursAfterMs) {
-          taskItems.push({
-            ...baseTask, id: `past-meeting-${request.meetingId}`, type: 'past_meeting',
-            title: titleDateTime,
-            description: `Meeting held on ${converted.displayDate}`,
-            mentorReport: request.mentor_report,
-            reportStatus: request.report_status,
-            reportReviewedAt: request.report_reviewed_at ?? null,
-            feedbackFormUrl: request.feedbackFormUrl,
-            feedbackFormSent: request.feedbackFormSent,
-          });
-
-          if (!userIsMentor && !request.feedbackFormSent) {
+          if (userIsMentor || request.feedbackFormSent) {
+            taskItems.push({
+              ...baseTask, id: `past-meeting-${request.meetingId}`, type: 'past_meeting',
+              title: titleDateTime,
+              description: `Meeting held on ${converted.displayDate}`,
+              mentorReport: request.mentor_report,
+              reportStatus: request.report_status,
+              reportReviewedAt: request.report_reviewed_at ?? null,
+              feedbackFormUrl: request.feedbackFormUrl,
+              feedbackFormSent: request.feedbackFormSent,
+            });
+          } else {
             taskItems.push({
               ...baseTask, id: `feedback-${request.meetingId}`, type: 'feedback',
               title: titleDateTime,
