@@ -687,7 +687,7 @@ export default function InternalDashboard() {
               {reportDialog.action === "accept" ? "Accept Report" : reportDialog.action === "reject" ? "Reject Report" : reportDialog.action === "lift_ban" ? "Lift Ban" : "Reopen Report"}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {reportDialog.action === "accept" ? "Accepting will freeze the account, forfeit the reported cycle's token, and send an email notification. If the account is a mentor, their own upcoming meetings with other mentees are also cancelled and refunded (pending requests to them are left alone)." : reportDialog.action === "reject" ? "No penalty will be applied." : reportDialog.action === "lift_ban" ? "Unfreezes the account and restores token/cycle state to what it would be had the freeze never happened. The report stays marked as accepted." : "Reopen for further review."}
+              {reportDialog.action === "accept" ? "Accepting will freeze the account and forfeit the reported cycle's token immediately. Any other pending request or upcoming meeting that account has elsewhere is also cancelled right away with a refund and a privacy-safe notice to the other mentor. If the account is a mentor, their own upcoming meetings with other mentees are also cancelled and refunded (pending requests to them are left alone)." : reportDialog.action === "reject" ? "No penalty will be applied." : reportDialog.action === "lift_ban" ? "Unfreezes the account and restores token/cycle state to what it would be had the freeze never happened. The report stays marked as accepted." : "Reopen for further review."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-3 space-y-3">

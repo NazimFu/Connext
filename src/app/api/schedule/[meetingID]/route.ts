@@ -354,6 +354,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ m
 
     console.log(`✅ Found requester: ${isMentorRequester ? 'mentor-as-mentee' : 'mentee'} ${requesterDoc.id}`);
 
+    // A still-pending (not yet accepted) request being withdrawn by its own
+    // requester is a low-stakes action — no meeting was ever confirmed, so no
+    // cancellation email is sent for it.
+    const wasPending = meeting.decision === 'pending';
+
     // Create cancel_info
     // Auto-replenish ONLY if the TARGET MENTOR cancels
     // If REQUESTER cancels (whether mentee or mentor-as-mentee), requires admin approval
@@ -397,9 +402,12 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ m
     await requesterContainer.item(requesterDoc.id, requesterDoc.id).replace(requesterDoc);
     console.log(`✅ Saved requester document`);
 
-    // Send cancellation emails
+    // Send cancellation emails — skipped when a mentee/requester withdraws a
+    // request that was still pending (never confirmed), per product decision.
     try {
-      if (isMentorCancelling) {
+      if (wasPending && !isMentorCancelling) {
+        console.log('📭 Skipping cancellation email — requester withdrew a still-pending request');
+      } else if (isMentorCancelling) {
         // Mentor cancelled - send email to mentee/requester
         const requesterEmail = isMentorRequester ? requesterDoc.mentor_email : requesterDoc.mentee_email;
         const requesterName = isMentorRequester ? requesterDoc.mentor_name : requesterDoc.mentee_name;

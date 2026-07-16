@@ -182,6 +182,110 @@ function meetingHasStarted(meeting: any): boolean {
   return Date.now() >= meetingDateTime.getTime();
 }
 
+// ─── Helper: cancel the reported user's OTHER active meeting/request ────────
+// If the CURRENT token cycle belongs to a DIFFERENT, unrelated meeting (the
+// reported meeting's own cycle already ran its course before this report was
+// reviewed), that separate commitment is cancelled/withdrawn IMMEDIATELY —
+// same moment the ban is imposed, not deferred to when the ban is lifted —
+// with an immediate token refund and a privacy-safe email to the other
+// mentor (never mentions the report). If that other meeting is already
+// ongoing/past, it's left alone to resolve naturally. Mutates `requester` in
+// place (tokens/token_cycle/scheduling); the caller persists the write.
+async function cancelRequestersOtherActiveMeeting(
+  requester: any,
+  requesterIsInMentorContainer: boolean,
+  cancelledAt: string
+): Promise<void> {
+  const otherMeetingId = requester.token_cycle?.meetingId;
+  if (!otherMeetingId) {
+    requester.tokens = clampToken(requester.tokens);
+    return;
+  }
+
+  const otherLookup = await locateMeeting(otherMeetingId);
+  const otherMeeting = otherLookup?.meeting;
+
+  if (
+    !otherLookup?.mentor ||
+    otherLookup.mentorScheduleIndex < 0 ||
+    otherLookup.menteeScheduleIndex < 0 ||
+    !otherMeeting ||
+    meetingHasStarted(otherMeeting)
+  ) {
+    // Unknown/missing meeting, or already ongoing/past — leave it untouched;
+    // it resolves naturally through the normal feedback flow.
+    requester.tokens = clampToken(requester.tokens);
+    return;
+  }
+
+  const targetMentorDoc: any = otherLookup.mentor;
+  const requesterOwnScheduleIndex = otherLookup.menteeScheduleIndex;
+  // Deliberately generic — the requester's report/suspension is confidential
+  // and must not be disclosed to an unrelated third-party mentor.
+  const neutralReason = 'This meeting could not proceed and was cancelled automatically. We apologize for any inconvenience.';
+
+  const notifyOtherMentor = async () => {
+    if (!targetMentorDoc.mentor_email) return;
+    try {
+      await sendEmail({
+        to: targetMentorDoc.mentor_email,
+        subject: `Meeting Cancelled - ${otherMeeting.date} at ${otherMeeting.time}`,
+        template: 'meeting-cancelled-by-mentee',
+        data: {
+          recipientName: targetMentorDoc.mentor_name,
+          mentorName: otherMeeting.mentor_name || targetMentorDoc.mentor_name,
+          menteeName: otherMeeting.mentee_name || requester.mentee_name || requester.mentor_name,
+          date: otherMeeting.date,
+          time: otherMeeting.time,
+          timezone: targetMentorDoc.timezone || otherMeeting.mentor_timezone || MY_TIMEZONE,
+          reason: neutralReason,
+          isForMentor: true,
+        },
+      });
+    } catch (emailError) {
+      console.error('[Reports] Failed to notify mentor of report-driven cancellation:', emailError);
+    }
+  };
+
+  if (otherMeeting.decision === 'pending') {
+    // A still-pending (not yet accepted) request being withdrawn is a
+    // low-stakes action — no meeting was ever confirmed, so no email is sent.
+    targetMentorDoc.scheduling[otherLookup.mentorScheduleIndex].decision = 'declined';
+    targetMentorDoc.scheduling[otherLookup.mentorScheduleIndex].scheduled_status = 'rejected';
+    targetMentorDoc.scheduling[otherLookup.mentorScheduleIndex].updated_at = cancelledAt;
+    await mentorContainer.item(targetMentorDoc.id, targetMentorDoc.id).replace(targetMentorDoc);
+
+    requester.scheduling[requesterOwnScheduleIndex].decision = 'declined';
+    requester.scheduling[requesterOwnScheduleIndex].scheduled_status = 'rejected';
+    requester.scheduling[requesterOwnScheduleIndex].updated_at = cancelledAt;
+    requester.tokens = 1;
+    requester.token_cycle = undefined;
+  } else if (otherMeeting.decision === 'accepted' && otherMeeting.scheduled_status === 'upcoming') {
+    const cancelInfo = {
+      cancelledBy: requester.id,
+      role: requesterIsInMentorContainer ? 'mentor' : 'mentee',
+      reason: neutralReason,
+      cancelledAt,
+      tokenStatus: 'auto-replenished',
+      reviewedBy: null,
+      reviewedAt: null,
+      reviewNotes: null,
+    };
+
+    targetMentorDoc.scheduling[otherLookup.mentorScheduleIndex].scheduled_status = 'cancelled';
+    targetMentorDoc.scheduling[otherLookup.mentorScheduleIndex].cancel_info = cancelInfo;
+    await mentorContainer.item(targetMentorDoc.id, targetMentorDoc.id).replace(targetMentorDoc);
+    await notifyOtherMentor();
+
+    requester.scheduling[requesterOwnScheduleIndex].scheduled_status = 'cancelled';
+    requester.scheduling[requesterOwnScheduleIndex].cancel_info = cancelInfo;
+    requester.tokens = 1;
+    requester.token_cycle = undefined;
+  } else {
+    requester.tokens = clampToken(requester.tokens);
+  }
+}
+
 // ─── Helper: cancel a frozen mentor's own hosted upcoming meetings ──────────
 // Runs when a mentor account is frozen (they were reported while acting as a
 // requester elsewhere). Protects the mentees who booked THEM by cancelling
@@ -192,12 +296,20 @@ function meetingHasStarted(meeting: any): boolean {
 async function cancelMentorsHostedUpcomingMeetings(mentorDoc: any, cancelledAt: string): Promise<void> {
   const ownMentorIds = new Set([mentorDoc.id, mentorDoc.mentorUID].filter(Boolean));
   const scheduling: Scheduling[] = mentorDoc.scheduling || [];
+  const neutralReason = 'This meeting could not proceed and was cancelled automatically. We apologize for any inconvenience.';
 
   const hostedUpcoming = scheduling.filter((s: any) => {
     const isRequesterEntry = !!s.mentorUID && !ownMentorIds.has(s.mentorUID);
     if (isRequesterEntry) return false; // this is the mentor's OWN booking elsewhere, not hosted by them
     return s.decision === 'accepted' && s.scheduled_status === 'upcoming';
   });
+
+  // The mentor's own document was already saved (accountFrozen + token
+  // mutations) before this function runs, so further mutations here need a
+  // separate write — collected as PatchOperations and applied in ONE call at
+  // the end, rather than each meeting doing its own full-document .replace()
+  // (which would risk the same stale-etag double-write bug fixed earlier).
+  const mentorOwnPatchOps: PatchOperation[] = [];
 
   for (const meetingEntry of hostedUpcoming) {
     try {
@@ -207,17 +319,19 @@ async function cancelMentorsHostedUpcomingMeetings(mentorDoc: any, cancelledAt: 
       const requesterDoc: any = lookup.mentee;
       const requesterContainer = lookup.menteeIsInMentorContainer ? mentorContainer : menteeContainer;
 
-      requesterDoc.scheduling[lookup.menteeScheduleIndex].scheduled_status = 'cancelled';
-      requesterDoc.scheduling[lookup.menteeScheduleIndex].cancel_info = {
+      const cancelInfo = {
         cancelledBy: mentorDoc.id,
         role: 'mentor',
-        reason: 'The mentor has been suspended pending investigation.',
+        reason: neutralReason,
         cancelledAt,
         tokenStatus: 'auto-replenished',
         reviewedBy: null,
         reviewedAt: null,
         reviewNotes: null,
       };
+
+      requesterDoc.scheduling[lookup.menteeScheduleIndex].scheduled_status = 'cancelled';
+      requesterDoc.scheduling[lookup.menteeScheduleIndex].cancel_info = cancelInfo;
 
       if (requesterDoc.token_cycle?.meetingId === meetingEntry.meetingId && requesterDoc.token_cycle.status === 'pending') {
         requesterDoc.tokens = 1;
@@ -227,6 +341,17 @@ async function cancelMentorsHostedUpcomingMeetings(mentorDoc: any, cancelledAt: 
       }
 
       await requesterContainer.item(requesterDoc.id, requesterDoc.id).replace(requesterDoc);
+
+      // Mirror the cancellation onto the mentor's OWN copy of this meeting —
+      // otherwise the mentee's side shows it cancelled but the mentor's own
+      // record (visible again once the ban is lifted) still shows "upcoming".
+      const ownIndex = scheduling.findIndex((s: any) => s.meetingId === meetingEntry.meetingId);
+      if (ownIndex > -1) {
+        mentorOwnPatchOps.push(
+          { op: 'add', path: `/scheduling/${ownIndex}/scheduled_status`, value: 'cancelled' },
+          { op: 'add', path: `/scheduling/${ownIndex}/cancel_info`, value: cancelInfo }
+        );
+      }
 
       const requesterEmail = lookup.menteeIsInMentorContainer ? requesterDoc.mentor_email : requesterDoc.mentee_email;
       const requesterName = lookup.menteeIsInMentorContainer ? requesterDoc.mentor_name : requesterDoc.mentee_name;
@@ -243,7 +368,7 @@ async function cancelMentorsHostedUpcomingMeetings(mentorDoc: any, cancelledAt: 
             date: meetingEntry.date,
             time: meetingEntry.time,
             timezone: meetingEntry.mentee_timezone || requesterDoc.timezone || MY_TIMEZONE,
-            reason: 'The mentor has been suspended pending investigation.',
+            reason: neutralReason,
             isForMentee: true,
             tokenAutoRefunded: true,
           },
@@ -251,6 +376,15 @@ async function cancelMentorsHostedUpcomingMeetings(mentorDoc: any, cancelledAt: 
       }
     } catch (err) {
       console.error(`[Reports] Failed to cancel hosted meeting ${meetingEntry.meetingId} during freeze:`, err);
+    }
+  }
+
+  if (mentorOwnPatchOps.length > 0) {
+    try {
+      await mentorContainer.item(mentorDoc.id, mentorDoc.id).patch(mentorOwnPatchOps);
+      console.log(`[Reports] Marked ${mentorOwnPatchOps.length / 2} hosted meeting(s) cancelled on ${mentorDoc.id}'s own record`);
+    } catch (err) {
+      console.error(`[Reports] Failed to update mentor's own scheduling copy after freeze:`, err);
     }
   }
 }
@@ -338,83 +472,16 @@ export async function PATCH(request: Request) {
         extraNotes.push('Token cycle resumed; the mentee still needs to submit feedback and wait out the cooldown.');
       }
 
-      // If the current cycle at BAN time belonged to a DIFFERENT, unrelated
-      // meeting (or nothing was in flight at all), the blanket tokens=0 applied
-      // at freeze time incorrectly clobbered it. Resolve that now, based on
-      // its CURRENT state (real time has passed since the ban started).
-      const pendingRestore = requester.ban_pending_restore as
-        | { otherActiveMeetingId: string | null; hadIdleToken: boolean }
-        | undefined;
+      // If nothing was in flight at ban time, an idle already-earned token was
+      // confiscated as a penalty for being banned — hand it back now. (Any
+      // OTHER active meeting/request the account had is not something to
+      // restore here — it was already cancelled and refunded immediately when
+      // the report was accepted; see cancelRequestersOtherActiveMeeting.)
+      const pendingRestore = requester.ban_pending_restore as { hadIdleToken: boolean } | undefined;
 
       if (pendingRestore?.hadIdleToken) {
-        // Nothing was in flight — hand back the confiscated, already-earned token.
         banLiftOperations.push({ op: 'add', path: '/tokens', value: 1 });
         extraNotes.push('An idle token confiscated at ban time has been returned.');
-      } else if (pendingRestore?.otherActiveMeetingId) {
-        const otherLookup = await locateMeeting(pendingRestore.otherActiveMeetingId);
-        const otherMeeting = otherLookup?.meeting;
-
-        if (otherLookup?.mentor && otherLookup.mentorScheduleIndex > -1 && otherMeeting && !meetingHasStarted(otherMeeting)) {
-          const targetMentorDoc: any = otherLookup.mentor;
-
-          if (otherMeeting.decision === 'pending') {
-            // Case: a separate request the banned account sent is still awaiting a decision — withdraw it and refund.
-            targetMentorDoc.scheduling[otherLookup.mentorScheduleIndex].decision = 'declined';
-            targetMentorDoc.scheduling[otherLookup.mentorScheduleIndex].scheduled_status = 'rejected';
-            targetMentorDoc.scheduling[otherLookup.mentorScheduleIndex].updated_at = liftedAt;
-            await mentorContainer.item(targetMentorDoc.id, targetMentorDoc.id).replace(targetMentorDoc);
-
-            banLiftOperations.push(
-              { op: 'add', path: '/tokens', value: 1 },
-              { op: 'remove', path: '/token_cycle' }
-            );
-            extraNotes.push('A separate pending request was withdrawn and the token refunded.');
-          } else if (otherMeeting.decision === 'accepted' && otherMeeting.scheduled_status === 'upcoming') {
-            // Case: a separate upcoming meeting the banned account booked is still ahead — cancel it and refund.
-            targetMentorDoc.scheduling[otherLookup.mentorScheduleIndex].scheduled_status = 'cancelled';
-            targetMentorDoc.scheduling[otherLookup.mentorScheduleIndex].cancel_info = {
-              cancelledBy: requester.id,
-              role: bannedIsInMentorContainer ? 'mentor' : 'mentee',
-              reason: 'The requester was under account suspension and the meeting could not proceed.',
-              cancelledAt: liftedAt,
-              tokenStatus: 'auto-replenished',
-              reviewedBy: null,
-              reviewedAt: null,
-              reviewNotes: null,
-            };
-            await mentorContainer.item(targetMentorDoc.id, targetMentorDoc.id).replace(targetMentorDoc);
-
-            if (targetMentorDoc.mentor_email) {
-              try {
-                await sendEmail({
-                  to: targetMentorDoc.mentor_email,
-                  subject: `Meeting Cancelled - ${otherMeeting.date} at ${otherMeeting.time}`,
-                  template: 'meeting-cancelled-by-mentee',
-                  data: {
-                    recipientName: targetMentorDoc.mentor_name,
-                    mentorName: otherMeeting.mentor_name || targetMentorDoc.mentor_name,
-                    menteeName: otherMeeting.mentee_name || requester.mentee_name || requester.mentor_name,
-                    date: otherMeeting.date,
-                    time: otherMeeting.time,
-                    timezone: targetMentorDoc.timezone || otherMeeting.mentor_timezone || MY_TIMEZONE,
-                    reason: 'The requester was under account suspension and the meeting could not proceed.',
-                    isForMentor: true,
-                  },
-                });
-              } catch (emailError) {
-                console.error('[Reports] Failed to notify mentor of lift-ban cancellation:', emailError);
-              }
-            }
-
-            banLiftOperations.push(
-              { op: 'add', path: '/tokens', value: 1 },
-              { op: 'remove', path: '/token_cycle' }
-            );
-            extraNotes.push('A separate upcoming meeting was cancelled and the token refunded.');
-          }
-        }
-        // If the meeting has already started (ongoing/past) or no longer exists,
-        // leave it untouched — it resolves naturally through the normal feedback flow.
       }
 
       if (pendingRestore) {
@@ -643,35 +710,26 @@ export async function PATCH(request: Request) {
           requester.token_cycle?.meetingId === meetingId &&
           requester.token_cycle.status === 'pending';
 
-        // Apply token penalty (immediate cycle forfeiture) for the reported meeting's own cycle.
         if (reportedCycleIsActive) {
+          // Apply token penalty (immediate cycle forfeiture) for the reported meeting's own cycle.
           requester.token_cycle.mentorReported = true;
           requester.token_cycle.reportRecordedAt = resolvedTimestamp;
           requester.token_cycle.status = 'forfeited';
           requester.token_cycle.evaluatedAt = resolvedTimestamp;
+          requester.tokens = clampToken(requester.tokens);
+        } else if (requester.token_cycle?.status === 'pending' && requester.token_cycle.meetingId) {
+          // The CURRENT token cycle belongs to a DIFFERENT, unrelated meeting —
+          // cancel/withdraw it right now and refund immediately (see helper).
+          await cancelRequestersOtherActiveMeeting(requester, !!menteeIsInMentorContainer, resolvedTimestamp!);
+        } else if (clampToken(requester.tokens) > 0) {
+          // Nothing active — an idle, already-earned token would otherwise sit
+          // there unaffected by the ban. Confiscate it as a penalty and
+          // remember to hand it back once "Lift Ban" runs.
+          requester.ban_pending_restore = { hadIdleToken: true };
+          requester.tokens = 0;
+        } else {
+          requester.tokens = clampToken(requester.tokens);
         }
-
-        // If the CURRENT token cycle belongs to a DIFFERENT, unrelated meeting
-        // (the reported meeting's own cycle already ran its course before this
-        // report was reviewed), the blanket tokens=0 below would incorrectly
-        // wipe out that separate commitment. Remember what we find so "Lift
-        // Ban" can resolve it properly later — see the liftBan branch above.
-        const banPendingRestore: { otherActiveMeetingId: string | null; hadIdleToken: boolean } = {
-          otherActiveMeetingId: null,
-          hadIdleToken: false,
-        };
-
-        if (!reportedCycleIsActive) {
-          if (requester.token_cycle?.status === 'pending' && requester.token_cycle.meetingId) {
-            banPendingRestore.otherActiveMeetingId = requester.token_cycle.meetingId;
-          } else if (clampToken(requester.tokens) > 0) {
-            banPendingRestore.hadIdleToken = true;
-          }
-        }
-        requester.ban_pending_restore = banPendingRestore;
-
-        requester.tokens = 0;
-        requester.tokens = clampToken(requester.tokens);
 
         if (menteeIsInMentorContainer) {
           await mentorContainer.item(requester.id, requester.id).replace(requester);
