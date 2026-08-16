@@ -222,6 +222,30 @@ export async function cleanupExpiredMeetings(): Promise<{
         }
       }
 
+      // --- Step 1b: notify the mentor that the request they didn't act on was auto-cancelled ---
+      const mentorEmail = mentor.mentor_email || meeting.mentor_email;
+      if (mentorEmail) {
+        try {
+          await sendEmail({
+            to: mentorEmail,
+            subject: 'Meeting Request Automatically Cancelled – CONNEXT',
+            template: 'meeting-cancelled-no-acceptance-mentor',
+            data: {
+              mentorName: mentor.mentor_name || meeting.mentor_name || 'there',
+              menteeName: (requester && (requester.mentee_name || requester.name)) || meeting.mentee_name || 'the mentee',
+              date: meeting.date,
+              time: meeting.time,
+              timezone: mentor.mentor_timezone || mentor.timezone || meeting.mentor_timezone || 'Asia/Kuala_Lumpur',
+            },
+          });
+          console.log(`📧 Auto-cancel notification sent to mentor ${mentorEmail}`);
+        } catch (emailError) {
+          console.error(`Failed to send mentor cancellation email for meeting ${meeting.meetingId}:`, emailError);
+        }
+      } else {
+        console.warn(`No mentor email found for meeting ${meeting.meetingId}`);
+      }
+
       // --- Step 2: mark the meeting as cancelled on the mentor side (in memory) ---
       mentor.scheduling[i].scheduled_status = 'cancelled';
       mentor.scheduling[i].cancel_info = cancelInfo;

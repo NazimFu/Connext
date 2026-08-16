@@ -509,6 +509,24 @@ export async function sendEmail({
       `,
       `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
     ),
+
+    'meeting-cancelled-no-acceptance-mentor': (data) => getEmailWrapper(
+      `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">❌ Meeting Request Automatically Cancelled</h2>`,
+      `
+        <p style="font-size: 16px; margin: 0 0 24px 0;">Hi <strong>${data.mentorName || 'there'}</strong>,</p>
+        <p style="font-size: 16px; margin: 0 0 24px 0;">The meeting request from <strong>${data.menteeName}</strong> has been <strong>automatically cancelled</strong> because it was not accepted or declined within the required timeframe.</p>
+
+        <div style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #ef4444;">
+          <h3 style="margin: 0 0 16px 0; color: #991b1b; font-size: 16px;">📅 Cancelled Request Details:</h3>
+          ${renderMeetingTimeDetails(data.date, data.time, data.timezone)}
+          <p style="margin: 8px 0; color: #374151;"><strong>Mentee:</strong> ${data.menteeName}</p>
+          <p style="margin: 12px 0 0 0; color: #374151;"><strong>Reason:</strong> The request was not accepted within the 3-day deadline, so it was automatically cancelled and the mentee's token was refunded.</p>
+        </div>
+
+        <p style="font-size: 14px; color: #6b7280; margin-top: 24px;">No action is needed. If the mentee wishes to meet with you, they may submit a new request.</p>
+      `,
+      `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
+    ),
   };
 
   if (!emailTemplates[template]) {
