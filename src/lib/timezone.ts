@@ -65,6 +65,19 @@ export const TIMEZONE_OPTIONS: TimezoneOption[] = [
  */
 export const MY_TZ = 'Asia/Kuala_Lumpur';
 
+/**
+ * Detects the visitor's browser timezone and returns it only if it's one of
+ * our selectable TIMEZONE_OPTIONS — used to default signup timezone pickers.
+ */
+export function detectBrowserTimezone(): string | null {
+  try {
+    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return TIMEZONE_OPTIONS.some(o => o.value === detected) ? detected : null;
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // CORE FIX: localDateTimeToUtcMs
 // ---------------------------------------------------------------------------

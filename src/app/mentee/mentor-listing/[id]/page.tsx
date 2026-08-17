@@ -26,7 +26,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { getGoogleDriveImageUrl } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { DEFAULT_TIMEZONE, convertMeetingTime, getUserTimezone } from "@/lib/timezone";
+import { DEFAULT_TIMEZONE, TIMEZONE_OPTIONS, convertMeetingTime, getUserTimezone } from "@/lib/timezone";
 import { getRequestWindowBounds } from "@/lib/token-cycle";
 
 const MY_TZ = DEFAULT_TIMEZONE; // "Asia/Kuala_Lumpur"
@@ -64,6 +64,8 @@ export default function MentorDetailPage() {
   // User's preferred timezone
   const userTz = getUserTimezone(user as any);
   const isNonDefaultTz = userTz !== MY_TZ;
+  const userTzOption = TIMEZONE_OPTIONS.find(o => o.value === userTz);
+  const userTzLabel = userTzOption ? `${userTzOption.label} (${userTzOption.offset})` : userTz;
 
   const mentorData = useMemo(() => {
     if (!mentor) return { name: "", image: "", logos: [] };
@@ -346,11 +348,9 @@ export default function MentorDetailPage() {
                       },
                     }}
                   />
-                  {isNonDefaultTz && (
-                    <div className="mt-2 text-xs text-teal-700 bg-teal-50 rounded px-2 py-1">
-                      🌐 Slots shown in your timezone. Submitted in Malaysia time.
-                    </div>
-                  )}
+                  <div className="mt-2 text-xs text-teal-700 bg-teal-50 rounded px-2 py-1">
+                    🌐 Times shown in <strong>{userTzLabel}</strong>{isNonDefaultTz ? '. Requests are recorded in Malaysia time.' : '.'}
+                  </div>
                   <div className="mt-1 text-xs text-green-700 flex items-center gap-1.5">
                     <div className="w-2 h-2 rounded-full bg-green-200 border border-green-600/50" />
                     Available dates highlighted in green
@@ -371,7 +371,7 @@ export default function MentorDetailPage() {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <div className="text-xs text-gray-600 font-medium">Available times{isNonDefaultTz ? ` (your timezone)` : ''}:</div>
+                      <div className="text-xs text-gray-600 font-medium">Available times ({userTzLabel}):</div>
                       <RadioGroup value={time} onValueChange={setTime} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                         {availableTimesForDay.map(({ myTime, displayTime }, i) => {
                           const isSelected = time === myTime;

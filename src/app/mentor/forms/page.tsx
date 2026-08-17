@@ -11,6 +11,8 @@ import { ImageCropper } from '@/components/ui/image-cropper';
 import { Checkbox } from '@/components/ui/checkbox';
 import { getGoogleDriveImageUrl } from '@/lib/utils';
 import { GripVertical, Building2, X } from 'lucide-react';
+import { TimezoneSelector } from '@/components/ui/timezone-selector';
+import { DEFAULT_TIMEZONE, detectBrowserTimezone, localTimeToMY } from '@/lib/timezone';
 
 type InstitutionPhoto = {
   url: string;
@@ -129,6 +131,13 @@ export default function MentorFormPage() {
 
   // Schedule state - using a map for easier manipulation
   const [schedule, setSchedule] = useState<Record<string, string[]>>({});
+
+  // Timezone the mentor is entering their availability times in
+  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
+  useEffect(() => {
+    const detected = detectBrowserTimezone();
+    if (detected) setTimezone(detected);
+  }, []);
 
   // Form data state matching the comprehensive form structure
   const [formData, setFormData] = useState({
@@ -381,11 +390,14 @@ export default function MentorFormPage() {
     }
   };
 
-  // Convert schedule to API format
+  // Convert schedule to API format, converting from the selected timezone to Malaysia time
   const getAvailableSlotsForAPI = () => {
     return Object.entries(schedule)
       .filter(([_, times]) => times.length > 0)
-      .map(([day, time]) => ({ day, time }));
+      .map(([day, times]) => ({
+        day,
+        time: times.map(t => localTimeToMY(t, timezone)).filter((t): t is string => t !== null).sort(),
+      }));
   };
 
   // Handle form submission
@@ -429,15 +441,16 @@ export default function MentorFormPage() {
           available_slots: getAvailableSlotsForAPI(),
           linkedin: formData.linkedin,
           github: formData.github,
+          timezone,
         }),
       });
-      
+
       const result = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(result.error || 'Failed to send verification code');
       }
-      
+
       console.log('[MENTOR-FORMS] Signup code sent:', result);
       
       setSignupId(result.signupId);
@@ -523,6 +536,7 @@ export default function MentorFormPage() {
           github: formData.github,
           cv_link: formData.cv_link,
           allowCVShare: formData.allowCVShare,
+          timezone,
         }),
       });
 
@@ -583,11 +597,12 @@ export default function MentorFormPage() {
           available_slots: getAvailableSlotsForAPI(),
           linkedin: formData.linkedin,
           github: formData.github,
+          timezone,
         }),
       });
-      
+
       const result = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(result.error || 'Failed to resend code');
       }
@@ -1351,6 +1366,15 @@ export default function MentorFormPage() {
                         <h2 className="text-xl font-bold text-black">Availability</h2>
                         <p className="text-gray-600 text-sm">Click time slots to toggle your availability</p>
                       </div>
+                    </div>
+
+                    {/* Timezone selector */}
+                    <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                      <label className="block text-sm font-semibold text-black mb-2">Your Timezone</label>
+                      <p className="text-xs text-gray-600 mb-3">
+                        The times you select below are treated as your local time in this timezone.
+                      </p>
+                      <TimezoneSelector value={timezone} onChange={setTimezone} />
                     </div>
 
                     {/* Quick stats */}

@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { User, Mentor } from '@/lib/types';
+import { DEFAULT_TIMEZONE } from '@/lib/timezone';
 
 export async function POST(request: Request) {
   try {
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
         github,
         cv_link,
         allowCVShare,
+        timezone,
       } = body;
 
       const menteeId = `mentee_${uid}`;
@@ -58,6 +60,7 @@ export async function POST(request: Request) {
         available_slots: available_slots || [],
         linkedin: linkedin || '',
         github: github || '',
+        timezone: timezone || DEFAULT_TIMEZONE,
         scheduling: [],
         tokens: 1,
         mentee_id: menteeId,
@@ -101,7 +104,8 @@ export async function POST(request: Request) {
         attachmentPath,    // ← legacy fallback
         allowCVShare,
         linkedin_url,
-        personal_statement
+        personal_statement,
+        timezone
       } = body;
 
       // Resolve cv_link — accept either field name sent by the frontend
@@ -127,6 +131,7 @@ export async function POST(request: Request) {
         allowCVShare: allowCVShare || false,
         linkedin_url: linkedin_url || '',
         personal_statement: personal_statement || '',
+        timezone: timezone || DEFAULT_TIMEZONE,
         role: 'mentee',
         verified: false,
         verificationStatus: 'not-submitted',

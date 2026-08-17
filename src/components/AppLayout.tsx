@@ -38,6 +38,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             '/signup',
             '/signup/mentor_secret',
             '/mentor/forms',
+            '/mentor/respond',
             '/mentee/forms',
             '/mentee/verification',
             '/mentee/verification-pending'

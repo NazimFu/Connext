@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useEffect } from 'react';
 import { auth } from '../../../../lib/firebase';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DEFAULT_TIMEZONE } from '@/lib/timezone';
 
 const MAX_CV_SIZE_BYTES = 2 * 1024 * 1024;
 const ALLOWED_CV_MIME_TYPES = [
@@ -56,12 +57,13 @@ export default function VerificationPage() {
         const institution = sessionStorage.getItem('profile_institution');
         const linkedin = sessionStorage.getItem('profile_linkedin');
         const github = sessionStorage.getItem('profile_github');
-        
+        const timezone = sessionStorage.getItem('profile_timezone');
+
         if (!storedEmail || !storedPassword || !name) {
             router.push('/signup');
             return;
         }
-        
+
         setEmail(storedEmail);
         setPassword(storedPassword);
         setProfileData({
@@ -70,7 +72,8 @@ export default function VerificationPage() {
             mentee_occupation: occupation || '',
             mentee_institution: institution || '',
             linkedin: linkedin || '',
-            github: github || ''
+            github: github || '',
+            timezone: timezone || DEFAULT_TIMEZONE
         });
     }, [router]);
     
@@ -180,7 +183,8 @@ export default function VerificationPage() {
                     allowCVShare: allowCVShare,
                     cv_link: cvPath,
                     linkedin_url: linkedinUrl,
-                    personal_statement: personalStatement
+                    personal_statement: personalStatement,
+                    timezone: profileData.timezone
                 }),
             });
             
@@ -275,7 +279,8 @@ export default function VerificationPage() {
                     cv_link: result.data?.cv_link || result.data?.attachmentPath || '',
                     allowCVShare: result.data?.allowCVShare || false,
                     linkedin_url: result.data?.linkedin_url || '',
-                    personal_statement: result.data?.personal_statement || ''
+                    personal_statement: result.data?.personal_statement || '',
+                    timezone: result.data?.timezone || profileData.timezone
                 }),
             });
             
@@ -301,6 +306,7 @@ export default function VerificationPage() {
             sessionStorage.removeItem('profile_institution');
             sessionStorage.removeItem('profile_linkedin');
             sessionStorage.removeItem('profile_github');
+            sessionStorage.removeItem('profile_timezone');
             
             toast({
                 title: "Account Created!",
@@ -382,7 +388,8 @@ export default function VerificationPage() {
                     allowCVShare: allowCVShare,
                     cv_link: cvPath,
                     linkedin_url: linkedinUrl,
-                    personal_statement: personalStatement
+                    personal_statement: personalStatement,
+                    timezone: profileData.timezone
                 }),
             });
             

@@ -33,6 +33,7 @@ const navigationItems = [
 const pagesWithoutSidebar = [
   '/mentor/forms',
   '/mentor/verification-pending',
+  '/mentor/respond',
 ];
 
 const APP_BG = '#fffdf4';

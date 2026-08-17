@@ -166,8 +166,16 @@ export async function sendEmail({
           <p style="margin: 8px 0; color: #374151;"><strong>Mentee:</strong> ${data.menteeName} (${data.menteeEmail})</p>
           ${data.message ? `<p style="margin: 12px 0 0 0; color: #374151;"><strong>Message:</strong><br/>${data.message}</p>` : ''}
         </div>
-        
-        <p style="font-size: 14px; color: #6b7280; margin-top: 24px;">Please log in to your dashboard to accept or decline this request.</p>
+
+        ${data.acceptUrl && data.declineUrl ? `
+        <div style="text-align: center; margin: 28px 0;">
+          <a href="${escapeHtml(data.acceptUrl)}" style="display: inline-block; background: #16a34a; color: #ffffff; text-decoration: none; font-weight: 600; padding: 12px 28px; border-radius: 8px; margin: 0 8px 8px 0;">✅ Accept Request</a>
+          <a href="${escapeHtml(data.declineUrl)}" style="display: inline-block; background: #ffffff; color: #dc2626; text-decoration: none; font-weight: 600; padding: 10px 26px; border-radius: 8px; border: 2px solid #dc2626; margin: 0 8px 8px 0;">❌ Decline Request</a>
+        </div>
+        <p style="font-size: 13px; color: #9ca3af; text-align: center; margin: 0 0 24px 0;">Clicking a button takes you to a confirmation page — nothing is decided until you confirm there.</p>
+        ` : ''}
+
+        <p style="font-size: 14px; color: #6b7280; margin-top: 24px;">Or log in to your dashboard to accept or decline this request.</p>
       `,
       `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
     ),

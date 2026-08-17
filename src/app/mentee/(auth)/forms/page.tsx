@@ -12,6 +12,8 @@ import React from 'react';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { TimezoneSelector } from '@/components/ui/timezone-selector';
+import { DEFAULT_TIMEZONE, detectBrowserTimezone } from '@/lib/timezone';
 
 export default function ProfileFormPage() {
   const [name, setName] = useState('');
@@ -21,21 +23,28 @@ export default function ProfileFormPage() {
   const [institution, setInstitution] = useState('');
   const [linkedin, setLinkedin] = useState('');
   const [github, setGithub] = useState('');
+  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { refreshUser } = useAuth();
   const { toast } = useToast();
-  
+
   // Load credentials from sessionStorage
   useEffect(() => {
     const storedEmail = sessionStorage.getItem('signup_email');
     const storedPassword = sessionStorage.getItem('signup_password');
-    
+
     if (!storedEmail || !storedPassword) {
       // Redirect to signup if credentials not found
       router.push('/signup');
       return;
     }
   }, [router]);
+
+  // Default to the visitor's detected timezone
+  useEffect(() => {
+    const detected = detectBrowserTimezone();
+    if (detected) setTimezone(detected);
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -87,6 +96,7 @@ export default function ProfileFormPage() {
       sessionStorage.setItem('profile_institution', institution.trim());
       sessionStorage.setItem('profile_linkedin', linkedin.trim());
       sessionStorage.setItem('profile_github', github.trim());
+      sessionStorage.setItem('profile_timezone', timezone);
       
       toast({
         title: "Profile Saved!",
@@ -166,6 +176,14 @@ export default function ProfileFormPage() {
                   required
                   disabled={isSubmitting}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Timezone</Label>
+                <p className="text-xs text-muted-foreground">
+                  Meeting times will display in your chosen timezone.
+                </p>
+                <TimezoneSelector value={timezone} onChange={setTimezone} disabled={isSubmitting} />
               </div>
 
               <div className="space-y-2">

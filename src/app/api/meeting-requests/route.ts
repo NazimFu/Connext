@@ -4,6 +4,8 @@ import { sendEmail } from "@/lib/email";
 import { cleanupExpiredMeetings } from "@/lib/cleanup-expired-meetings";
 import { fromZonedTime } from 'date-fns-tz';
 import { buildFreshTokenCycle, clampToken, evaluateTokenCycleForUser, getTokenCycleEvaluateAtIso, isWithinRequestWindow } from '@/lib/token-cycle';
+import { applyMeetingDecision } from '@/lib/server/apply-meeting-decision';
+import { buildMeetingResponseUrl } from '@/lib/server/meeting-response-token';
 
 const MY_TIMEZONE = 'Asia/Kuala_Lumpur';
 
@@ -606,6 +608,15 @@ export async function POST(req: NextRequest) {
 
     // Send email notification to mentor
     try {
+      let acceptUrl: string | undefined;
+      let declineUrl: string | undefined;
+      try {
+        acceptUrl = buildMeetingResponseUrl({ meetingId, mentorId, intent: 'accept' });
+        declineUrl = buildMeetingResponseUrl({ meetingId, mentorId, intent: 'decline' });
+      } catch (tokenError) {
+        console.error('Failed to build meeting response links:', tokenError);
+      }
+
       await sendEmail({
         to: targetMentor.mentor_email,
         subject: 'New Meeting Request Received - CONNEXT',
@@ -617,7 +628,9 @@ export async function POST(req: NextRequest) {
           date,
           time,
           timezone: mentorTimezone,
-          message: message || ''
+          message: message || '',
+          acceptUrl,
+          declineUrl
         }
       });
       console.log('✅ Email sent to mentor');
@@ -659,258 +672,26 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const mentorContainer = database.container('mentor');
-    
-    // 1. Update the TARGET MENTOR (the one accepting/rejecting)
-    const querySpec = {
-      query: "SELECT * FROM c WHERE c.mentorUID = @mentorId OR c.id = @mentorId",
-      parameters: [{ name: "@mentorId", value: mentorId }]
-    };
+    const result = await applyMeetingDecision({ mentorId, meetingId, decision, googleMeetUrl, meetingLink });
 
-    const { resources: mentors } = await mentorContainer.items
-      .query(querySpec)
-      .fetchAll();
-
-    if (mentors.length === 0) {
+    if (!result.ok) {
       return NextResponse.json(
-        { message: "Mentor not found" },
-        { status: 404 }
+        { message: result.message, error: result.error },
+        { status: result.status }
       );
-    }
-
-    const mentor = mentors[0];
-
-    if (!mentor.scheduling || !Array.isArray(mentor.scheduling)) {
-      return NextResponse.json(
-        { message: "No scheduling data found" },
-        { status: 404 }
-      );
-    }
-
-    const meetingIndex = mentor.scheduling.findIndex(
-      (meeting: any) => meeting.meetingId === meetingId
-    );
-
-    if (meetingIndex === -1) {
-      return NextResponse.json(
-        { message: "Meeting not found" },
-        { status: 404 }
-      );
-    }
-
-    const meeting = mentor.scheduling[meetingIndex];
-    const menteeId = meeting.menteeUID;
-
-    // Enforce 3-day acceptance deadline: mentor can only accept up to 3 days before the meeting
-    if (decision === 'accepted') {
-      const meetingDateTime = parseMeetingDateTimeInMalaysia(meeting.date, meeting.time);
-      if (meetingDateTime) {
-        const daysUntilMeeting = (meetingDateTime.getTime() - new Date().getTime()) / (24 * 60 * 60 * 1000);
-        if (daysUntilMeeting < 3) {
-          return NextResponse.json(
-            {
-              message:
-                'The acceptance deadline has passed. Meetings can only be accepted at least 3 days before the scheduled time.',
-              error: 'ACCEPTANCE_DEADLINE_PASSED',
-            },
-            { status: 400 }
-          );
-        }
-      }
-    }
-
-    // Update target mentor's meeting
-    mentor.scheduling[meetingIndex].decision = decision;
-    mentor.scheduling[meetingIndex].scheduled_status = decision === 'accepted' ? 'upcoming' : 'rejected';
-    mentor.scheduling[meetingIndex].updated_at = new Date().toISOString();
-    
-    // Update Google Meet URL if provided
-    if (googleMeetUrl) {
-      mentor.scheduling[meetingIndex].googleMeetUrl = googleMeetUrl;
-      console.log(`✅ Updated googleMeetUrl in target mentor's record: ${googleMeetUrl}`);
-    }
-    if (meetingLink) {
-      mentor.scheduling[meetingIndex].meetingLink = meetingLink;
-      console.log(`✅ Updated meetingLink in target mentor's record: ${meetingLink}`);
-    }
-    
-    const isRejected = decision === 'declined' || decision === 'rejected';
-    console.log(`Decision: ${decision}, isRejected: ${isRejected}`);
-
-    await mentorContainer.item(mentor.id, mentor.id).replace(mentor);
-    console.log('✅ Updated meeting in TARGET mentor table:', meetingId);
-
-    // 2. Update the REQUESTER (could be mentee or mentor acting as mentee) in parallel
-    const menteeContainer = database.container('mentee');
-    
-    // Try both mentee table and mentor table in parallel
-    const [menteeResult, requesterMentorResult] = await Promise.allSettled([
-      // Try updating mentee
-      (async () => {
-        const { resource: mentee } = await menteeContainer.item(menteeId, menteeId).read();
-        
-        if (mentee && mentee.scheduling && Array.isArray(mentee.scheduling)) {
-          const menteeMeetingIndex = mentee.scheduling.findIndex(
-            (m: any) => m.meetingId === meetingId
-          );
-
-          if (menteeMeetingIndex !== -1) {
-            mentee.scheduling[menteeMeetingIndex].decision = decision;
-            mentee.scheduling[menteeMeetingIndex].scheduled_status = decision === 'accepted' ? 'upcoming' : 'rejected';
-            mentee.scheduling[menteeMeetingIndex].updated_at = new Date().toISOString();
-
-            if (googleMeetUrl) {
-              mentee.scheduling[menteeMeetingIndex].googleMeetUrl = googleMeetUrl;
-            }
-            if (meetingLink) {
-              mentee.scheduling[menteeMeetingIndex].meetingLink = meetingLink;
-            }
-
-            // Replenish token if declined or rejected
-            if (isRejected) {
-              const currentTokens = clampToken(mentee.tokens);
-              mentee.tokens = 1;
-              if (mentee.token_cycle?.meetingId === meetingId && mentee.token_cycle.status === 'pending') {
-                mentee.token_cycle = undefined;
-              }
-              console.log(`💰 REPLENISHING TOKEN: ${currentTokens} → ${mentee.tokens} for mentee ${menteeId}`);
-            }
-
-            await menteeContainer.item(menteeId, menteeId).replace(mentee);
-            console.log('✅ Updated meeting in MENTEE table:', meetingId);
-            return { success: true, type: 'mentee' };
-          }
-        }
-        return { success: false, type: 'mentee' };
-      })(),
-      
-      // Try finding mentor with mentee_id
-      (async () => {
-        const requesterQuerySpec = {
-          query: "SELECT * FROM c WHERE c.mentee_id = @menteeId",
-          parameters: [{ name: "@menteeId", value: menteeId }]
-        };
-
-        const { resources: requesters } = await mentorContainer.items
-          .query(requesterQuerySpec)
-          .fetchAll();
-
-        if (requesters.length > 0) {
-          const requesterMentor = requesters[0];
-          
-          if (requesterMentor.scheduling && Array.isArray(requesterMentor.scheduling)) {
-            const requesterMeetingIndex = requesterMentor.scheduling.findIndex(
-              (m: any) => m.meetingId === meetingId
-            );
-
-            if (requesterMeetingIndex !== -1) {
-              requesterMentor.scheduling[requesterMeetingIndex].decision = decision;
-              requesterMentor.scheduling[requesterMeetingIndex].scheduled_status = decision === 'accepted' ? 'upcoming' : 'rejected';
-              requesterMentor.scheduling[requesterMeetingIndex].updated_at = new Date().toISOString();
-
-              if (googleMeetUrl) {
-                requesterMentor.scheduling[requesterMeetingIndex].googleMeetUrl = googleMeetUrl;
-              }
-              if (meetingLink) {
-                requesterMentor.scheduling[requesterMeetingIndex].meetingLink = meetingLink;
-              }
-
-              // Replenish token if declined or rejected
-              if (isRejected) {
-                const currentTokens = clampToken(requesterMentor.tokens);
-                requesterMentor.tokens = 1;
-                if (requesterMentor.token_cycle?.meetingId === meetingId && requesterMentor.token_cycle.status === 'pending') {
-                  requesterMentor.token_cycle = undefined;
-                }
-                console.log(`💰 REPLENISHING TOKEN for mentor: ${currentTokens} → ${requesterMentor.tokens}`);
-              }
-
-              await mentorContainer.item(requesterMentor.id, requesterMentor.id).replace(requesterMentor);
-              console.log('✅ Updated meeting in REQUESTER MENTOR table:', meetingId);
-              return { success: true, type: 'mentor' };
-            }
-          }
-        }
-        return { success: false, type: 'mentor' };
-      })()
-    ]);
-
-    // Check results
-    let updatedRequester = false;
-    if (menteeResult.status === 'fulfilled' && menteeResult.value.success) {
-      updatedRequester = true;
-    } else if (requesterMentorResult.status === 'fulfilled' && requesterMentorResult.value.success) {
-      updatedRequester = true;
-    }
-
-    if (!updatedRequester) {
-      console.warn(`⚠️ Could not update requester for meeting ${meetingId}`);
-    }
-
-    // Send email notifications
-    try {
-      console.log(`📧 Preparing to send ${decision} email to: ${meeting.mentee_email}`);
-      console.log('Email data:', {
-        to: meeting.mentee_email,
-        menteeName: meeting.mentee_name,
-        mentorName: meeting.mentor_name,
-        date: meeting.date,
-        time: meeting.time
-      });
-
-      if (decision === 'accepted') {
-        // Email to mentee: meeting accepted
-        await sendEmail({
-          to: meeting.mentee_email,
-          subject: 'Your Mentorship Meeting is Confirmed - CONNEXT',
-          template: 'mentee-meeting-accepted',
-          data: {
-            menteeName: meeting.mentee_name,
-            mentorName: meeting.mentor_name,
-            date: meeting.date,
-            time: meeting.time,
-            timezone: meeting.mentee_timezone || requesterRecord?.doc?.timezone || MY_TIMEZONE,
-            googleMeetUrl: meeting.googleMeetUrl || ''
-          }
-        });
-        console.log('✅ Acceptance email sent successfully to:', meeting.mentee_email);
-      } else if (decision === 'declined' || decision === 'rejected') {
-        // Email to mentee: meeting declined/rejected
-        console.log('🔴 Sending decline/reject email...');
-        await sendEmail({
-          to: meeting.mentee_email,
-          subject: 'Meeting Request Update - CONNEXT',
-          template: 'mentee-meeting-declined',
-          data: {
-            menteeName: meeting.mentee_name,
-            mentorName: meeting.mentor_name,
-            date: meeting.date,
-            time: meeting.time,
-            timezone: meeting.mentee_timezone || requesterRecord?.doc?.timezone || MY_TIMEZONE
-          }
-        });
-        console.log('✅ Decline email sent successfully to:', meeting.mentee_email);
-      }
-    } catch (emailError) {
-      console.error('❌ Failed to send decision email:', emailError);
-      console.error('Email error details:', {
-        message: (emailError as Error).message,
-        stack: (emailError as Error).stack
-      });
-      // Don't fail the request if email fails
     }
 
     return NextResponse.json({
       message: `Meeting ${decision}`,
-      meeting: mentor.scheduling[meetingIndex],
-      updatedRequester
+      meeting: result.meeting,
+      updatedRequester: result.updatedRequester
     });
   } catch (error) {
     console.error('Failed to update meeting:', error);
     return NextResponse.json(
-      { 
+      {
         message: "Failed to update meeting",
-        error: (error as Error).message 
+        error: (error as Error).message
       },
       { status: 500 }
     );
