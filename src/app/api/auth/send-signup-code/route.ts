@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
         data: {
           userName: name || 'User',
           verificationCode: verificationCode,
-          expiresIn: '10 minutes',
+          expiresIn: '2 minutes',
         },
       });
     } catch (emailErr: any) {

@@ -1,6 +1,7 @@
 // src/app/api/auth/verify-signup-code/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { CosmosClient } from '@azure/cosmos';
+import { getPartitionKeyField } from '@/lib/server/cosmos-partition-key';
 
 const client = new CosmosClient({
   endpoint: process.env.COSMOS_DB_ENDPOINT!,
@@ -97,8 +98,9 @@ export async function POST(request: NextRequest) {
     if (Date.now() > record.expiresAt) {
       // Optional: clean up expired record (safe)
       try {
+        const partitionKeyField = await getPartitionKeyField(container);
         console.log(`[VERIFY] Code expired, deleting document: ${record.id}`);
-        await container.item(record.id, record.id).delete();
+        await container.item(record.id, record[partitionKeyField]).delete();
         console.log(`[VERIFY] Expired record deleted successfully`);
       } catch (e: any) {
         // ignore cleanup failure on expired record
@@ -120,50 +122,10 @@ export async function POST(request: NextRequest) {
 
     // Safe cleanup - delete temp signup record after successful verification
     try {
-      console.log(`[VERIFY] Attempting deletion:`, {
-        documentId: record.id,
-        email: record.email,
-        containerName: container.id,
-      });
-      
-      // Try multiple partition key approaches
-      let deleted = false;
-      const partitionKeyAttempts = [
-        { value: record.menteeUID, name: 'menteeUID' },
-        { value: record.mentorUID, name: 'mentorUID' },
-        { value: record.id, name: 'id' },
-        { value: record.email?.toLowerCase(), name: 'email (lowercase)' },
-        { value: record.role, name: 'role' }
-      ];
-      
-      for (const attempt of partitionKeyAttempts) {
-        if (!attempt.value) continue; // Skip if value is undefined
-        
-        try {
-          console.log(`[VERIFY] Trying partition key '${attempt.name}' with value: '${attempt.value}'`);
-          const deleteResponse = await container.item(record.id, attempt.value).delete();
-          console.log(`[VERIFY] ✓ Deleted using '${attempt.name}' as partition key:`, {
-            statusCode: deleteResponse.statusCode,
-            activityId: deleteResponse.activityId
-          });
-          deleted = true;
-          break;
-        } catch (err: any) {
-          if (err.statusCode === 404 || err.code === 404) {
-            console.log(`[VERIFY] Partition key '${attempt.name}' returned 404`);
-            continue;
-          } else {
-            console.log(`[VERIFY] Partition key '${attempt.name}' error (code ${err.code || err.statusCode}): ${err.message?.split('\n')[0]}`);
-            throw err;
-          }
-        }
-      }
-      
-      if (!deleted) {
-        console.warn(`[VERIFY] ⚠️ Could not delete - document may use custom partition key or no longer exists`);
-        console.log(`[VERIFY] Document ID: ${record.id}, Email: ${record.email}`);
-      }
-      
+      const partitionKeyField = await getPartitionKeyField(container);
+      console.log(`[VERIFY] Deleting document ${record.id} using partition key '${partitionKeyField}'`);
+      await container.item(record.id, record[partitionKeyField]).delete();
+      console.log(`[VERIFY] ✓ Deleted successfully`);
     } catch (deleteErr: any) {
       // Only log if it's a real error (not 404)
       if (deleteErr.statusCode !== 404 && deleteErr.code !== 404) {
@@ -173,8 +135,8 @@ export async function POST(request: NextRequest) {
           statusCode: deleteErr.statusCode,
         });
       }
-      // Don't throw - allow the response to continue since verification succeeded
-      // The cleanup is best-effort; temp records will be cleaned by scheduled cleanup job
+      // Don't throw - allow the response to continue since verification succeeded.
+      // Any leftover document is still caught by the scheduled cleanup-temp-signups cron.
     }
 
     // Return the stored signup data for the frontend to complete account creation

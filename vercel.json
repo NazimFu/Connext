@@ -5,6 +5,10 @@
 			"schedule": "0 4 * * *"
 		},
 		{
+			"path": "/api/cron/cleanup-temp-signups",
+			"schedule": "0 4 * * *"
+		},
+		{
 			"path": "/api/cron/evaluate-token-cycles",
 			"schedule": "0 4 * * *"
 		},

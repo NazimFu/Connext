@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ArrowLeft } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { auth } from "../../../../lib/firebase";
@@ -40,11 +41,42 @@ export default function ProfileFormPage() {
     }
   }, [router]);
 
+  // Restore previously entered profile fields if the user navigated back here
+  useEffect(() => {
+    const storedName = sessionStorage.getItem('profile_name');
+    const storedAge = sessionStorage.getItem('profile_age');
+    const storedOccupation = sessionStorage.getItem('profile_occupation');
+    const storedInstitution = sessionStorage.getItem('profile_institution');
+    const storedLinkedin = sessionStorage.getItem('profile_linkedin');
+    const storedGithub = sessionStorage.getItem('profile_github');
+    const storedTimezone = sessionStorage.getItem('profile_timezone');
+
+    if (storedName) setName(storedName);
+    if (storedAge) setAge(storedAge);
+    if (storedOccupation) setOccupation(storedOccupation);
+    if (storedInstitution) setInstitution(storedInstitution);
+    if (storedLinkedin) setLinkedin(storedLinkedin);
+    if (storedGithub) setGithub(storedGithub);
+    if (storedTimezone) setTimezone(storedTimezone);
+  }, []);
+
   // Default to the visitor's detected timezone
   useEffect(() => {
     const detected = detectBrowserTimezone();
     if (detected) setTimezone(detected);
   }, []);
+
+  const handleBack = () => {
+    // Persist whatever's currently in the fields so it's still there if the user comes back
+    sessionStorage.setItem('profile_name', name.trim());
+    sessionStorage.setItem('profile_age', age);
+    sessionStorage.setItem('profile_occupation', occupation.trim());
+    sessionStorage.setItem('profile_institution', institution.trim());
+    sessionStorage.setItem('profile_linkedin', linkedin.trim());
+    sessionStorage.setItem('profile_github', github.trim());
+    sessionStorage.setItem('profile_timezone', timezone);
+    router.push('/signup');
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -122,6 +154,15 @@ export default function ProfileFormPage() {
       <div className="w-full max-w-md">
         <Card>
           <CardHeader>
+            <button
+              type="button"
+              onClick={handleBack}
+              disabled={isSubmitting}
+              className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-amber-600 transition-colors mb-2 disabled:opacity-50"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
             <CardTitle className="font-headline text-2xl text-center">Create Your Profile</CardTitle>
           </CardHeader>
           <CardContent>
@@ -166,7 +207,7 @@ export default function ProfileFormPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="institution">Institution</Label>
+                <Label htmlFor="institution">Current Institution/Company/Association</Label>
                 <Input
                   id="institution"
                   type="text"

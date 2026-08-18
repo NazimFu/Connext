@@ -3,17 +3,17 @@ import { database } from '@/lib/cosmos';
 
 export async function GET() {
   try {
-    // Fetch all mentee applications
+    // Fetch all mentee applications (excluding abandoned/incomplete temp_signup records)
     const menteeContainer = database.container('mentee');
     const menteeQuery = {
-      query: "SELECT * FROM c ORDER BY c._ts DESC"
+      query: "SELECT * FROM c WHERE (NOT IS_DEFINED(c.type) OR c.type != 'temp_signup') ORDER BY c._ts DESC"
     };
     const { resources: mentees } = await menteeContainer.items.query(menteeQuery).fetchAll();
 
-    // Fetch all mentor applications  
+    // Fetch all mentor applications (excluding abandoned/incomplete temp_signup records)
     const mentorContainer = database.container('mentor');
     const mentorQuery = {
-      query: "SELECT * FROM c ORDER BY c._ts DESC"
+      query: "SELECT * FROM c WHERE (NOT IS_DEFINED(c.type) OR c.type != 'temp_signup') ORDER BY c._ts DESC"
     };
     const { resources: mentors } = await mentorContainer.items.query(mentorQuery).fetchAll();
 

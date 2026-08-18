@@ -118,6 +118,7 @@ export default function MentorFormPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [activeSection, setActiveSection] = useState(0);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   
   // Verification code flow
   const [email, setEmail] = useState('');
@@ -411,6 +412,11 @@ export default function MentorFormPage() {
   };
 
   const handleCompleteProfile = async () => {
+    if (!agreedToTerms) {
+      setError('Please agree to the Terms and Conditions to continue.');
+      return;
+    }
+
     setIsSubmitting(true);
     setError('');
 
@@ -907,7 +913,7 @@ export default function MentorFormPage() {
 
                       <div className="input-group">
                         <label className="floating-label block text-sm font-medium text-black mb-2">
-                          Current Institution <span className="text-yellow-600">*</span>
+                          Current Institution/Company/Association <span className="text-yellow-600">*</span>
                         </label>
                         <input
                           type="text"
@@ -1534,14 +1540,30 @@ export default function MentorFormPage() {
                   </div>
                 )}
 
+                {activeSection === sections.length - 1 && (
+                  <div className="mt-8 flex items-center gap-2">
+                    <Checkbox
+                      id="agree-terms"
+                      checked={agreedToTerms}
+                      onCheckedChange={(checked) => setAgreedToTerms(checked as boolean)}
+                    />
+                    <label htmlFor="agree-terms" className="text-sm font-medium text-black cursor-pointer">
+                      I agree to the{' '}
+                      <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-700">
+                        Terms and Conditions
+                      </a>
+                    </label>
+                  </div>
+                )}
+
                 {/* Navigation & Submit */}
-                <div className="mt-8 flex items-center justify-between gap-4">
+                <div className="mt-4 flex items-center justify-between gap-4">
                   <button
                     type="button"
                     onClick={() => setActiveSection(Math.max(0, activeSection - 1))}
                     className={`px-6 py-3 rounded-lg font-medium transition-all ${
-                      activeSection === 0 
-                        ? 'opacity-0 pointer-events-none' 
+                      activeSection === 0
+                        ? 'opacity-0 pointer-events-none'
                         : 'bg-gray-200 text-black hover:bg-gray-300 border border-gray-400'
                     }`}
                   >
@@ -1561,7 +1583,7 @@ export default function MentorFormPage() {
                       <button
                         type="button"
                         onClick={handleCompleteProfile}
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || !agreedToTerms}
                         className="w-full px-6 py-4 bg-black text-white font-bold rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                       >
                         {isSubmitting ? 'Completing...' : 'Complete Profile'}

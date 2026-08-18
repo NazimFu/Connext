@@ -15,6 +15,7 @@ import { useEffect } from 'react';
 import { auth } from '../../../../lib/firebase';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DEFAULT_TIMEZONE } from '@/lib/timezone';
+import { ArrowLeft } from 'lucide-react';
 
 const MAX_CV_SIZE_BYTES = 2 * 1024 * 1024;
 const ALLOWED_CV_MIME_TYPES = [
@@ -32,6 +33,7 @@ export default function VerificationPage() {
     const [essay, setEssay] = useState('');
     const [linkedinUrl, setLinkedinUrl] = useState('');
     const [allowCVShare, setAllowCVShare] = useState(false);
+    const [agreedToTerms, setAgreedToTerms] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isCheckingUser, setIsCheckingUser] = useState(false);
@@ -75,6 +77,25 @@ export default function VerificationPage() {
             github: github || '',
             timezone: timezone || DEFAULT_TIMEZONE
         });
+
+        // Restore this page's own previously entered fields, if any
+        const storedEssay = sessionStorage.getItem('verify_essay');
+        const storedLinkedinUrl = sessionStorage.getItem('verify_linkedin_url');
+        const storedAllowCVShare = sessionStorage.getItem('verify_allow_cv_share');
+        const storedAgreedToTerms = sessionStorage.getItem('verify_agreed_terms');
+        const storedActiveTab = sessionStorage.getItem('verify_active_tab');
+
+        if (storedEssay) setEssay(storedEssay);
+        // Auto-fill from the LinkedIn URL already entered on the previous page,
+        // unless this page's own field was already filled in independently.
+        if (storedLinkedinUrl) {
+            setLinkedinUrl(storedLinkedinUrl);
+        } else if (linkedin) {
+            setLinkedinUrl(linkedin);
+        }
+        if (storedAllowCVShare) setAllowCVShare(storedAllowCVShare === 'true');
+        if (storedAgreedToTerms) setAgreedToTerms(storedAgreedToTerms === 'true');
+        if (storedActiveTab) setActiveTab(storedActiveTab);
     }, [router]);
     
     // Countdown timer
@@ -109,8 +130,28 @@ export default function VerificationPage() {
         return null;
     };
 
+    const handleBack = () => {
+        // Persist whatever's currently entered so it's still there if the user comes back
+        sessionStorage.setItem('verify_essay', essay);
+        sessionStorage.setItem('verify_linkedin_url', linkedinUrl);
+        sessionStorage.setItem('verify_allow_cv_share', String(allowCVShare));
+        sessionStorage.setItem('verify_agreed_terms', String(agreedToTerms));
+        sessionStorage.setItem('verify_active_tab', activeTab);
+        router.push('/mentee/forms');
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (!agreedToTerms) {
+            toast({
+                variant: 'destructive',
+                title: 'Terms and Conditions',
+                description: 'Please agree to the Terms and Conditions to continue.',
+            });
+            return;
+        }
+
         setIsSubmitting(true);
 
         try {
@@ -307,6 +348,11 @@ export default function VerificationPage() {
             sessionStorage.removeItem('profile_linkedin');
             sessionStorage.removeItem('profile_github');
             sessionStorage.removeItem('profile_timezone');
+            sessionStorage.removeItem('verify_essay');
+            sessionStorage.removeItem('verify_linkedin_url');
+            sessionStorage.removeItem('verify_allow_cv_share');
+            sessionStorage.removeItem('verify_agreed_terms');
+            sessionStorage.removeItem('verify_active_tab');
             
             toast({
                 title: "Account Created!",
@@ -427,6 +473,17 @@ export default function VerificationPage() {
             <div className="w-full max-w-2xl">
                 <Card>
                     <CardHeader>
+                        {!showVerification && (
+                            <button
+                                type="button"
+                                onClick={handleBack}
+                                disabled={isSubmitting}
+                                className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-amber-600 transition-colors mb-2 disabled:opacity-50"
+                            >
+                                <ArrowLeft className="h-4 w-4" />
+                                Back
+                            </button>
+                        )}
                         <CardTitle className="font-headline text-2xl text-center">
                             {showVerification ? 'Verify Your Email' : 'Verify Your Account'}
                         </CardTitle>
@@ -496,13 +553,16 @@ export default function VerificationPage() {
                                     </p>
                                     <div className="grid w-full items-center gap-1.5">
                                         <Label htmlFor="linkedin">LinkedIn Profile Link</Label>
-                                        <Input 
-                                            id="linkedin" 
-                                            type="url" 
-                                            placeholder="https://linkedin.com/in/yourprofile" 
+                                        <Input
+                                            id="linkedin"
+                                            type="url"
+                                            placeholder="https://linkedin.com/in/yourprofile"
                                             value={linkedinUrl}
                                             onChange={(e) => setLinkedinUrl(e.target.value)}
                                         />
+                                        <p className="text-xs text-gray-500">
+                                            Prefilled from the LinkedIn link you entered earlier — edit it here if it's different.
+                                        </p>
                                     </div>
                                 </div>
                             </TabsContent>
@@ -521,11 +581,27 @@ export default function VerificationPage() {
                                 </div>
                             </TabsContent>
                         </Tabs>
-                        <Button 
-                            onClick={handleSubmit} 
-                            size="lg" 
-                            className="w-full mt-8 bg-accent hover:bg-accent/90" 
-                            disabled={(!cvFile && !essay) || isSubmitting}
+                        <div className="flex items-center gap-2 mt-6">
+                            <Checkbox
+                                id="agree-terms"
+                                checked={agreedToTerms}
+                                onCheckedChange={(checked) => setAgreedToTerms(checked as boolean)}
+                            />
+                            <label
+                                htmlFor="agree-terms"
+                                className="text-sm font-medium leading-none cursor-pointer"
+                            >
+                                I agree to the{' '}
+                                <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline text-amber-700 hover:text-amber-800">
+                                    Terms and Conditions
+                                </a>
+                            </label>
+                        </div>
+                        <Button
+                            onClick={handleSubmit}
+                            size="lg"
+                            className="w-full mt-4 bg-accent hover:bg-accent/90"
+                            disabled={(!cvFile && !essay) || !agreedToTerms || isSubmitting}
                         >
                             {isSubmitting ? (
                                 <>

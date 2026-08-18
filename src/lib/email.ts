@@ -427,7 +427,7 @@ export async function sendEmail({
         </div>
 
         <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 20px 0;">
-          <p style="margin: 0; font-size: 14px; color: #6b7280;">⏱️ This code will expire in <strong>${data.expiresIn || '10 minutes'}</strong>. Do not share this code with anyone.</p>
+          <p style="margin: 0; font-size: 14px; color: #6b7280;">⏱️ This code will expire in <strong>${data.expiresIn || '2 minutes'}</strong>. Do not share this code with anyone.</p>
         </div>
 
         <p style="font-size: 14px; color: #6b7280; margin: 24px 0;">Once verified, you'll be able to access all features of the CONNEXT platform and start connecting with mentors or mentees!</p>

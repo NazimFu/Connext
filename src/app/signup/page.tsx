@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth } from "@/hooks/use-auth";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { auth } from '../../lib/firebase'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { Separator } from "@/components/ui/separator"
@@ -23,6 +23,14 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Restore previously entered credentials if the user navigated back here
+  useEffect(() => {
+    const storedEmail = sessionStorage.getItem('signup_email');
+    const storedPassword = sessionStorage.getItem('signup_password');
+    if (storedEmail) setEmail(storedEmail);
+    if (storedPassword) setPassword(storedPassword);
+  }, []);
 
   const signIn = async (e: React.MouseEvent<HTMLButtonElement>) => {
     try {
@@ -67,11 +75,12 @@ export default function SignupPage() {
         <CardContent className="grid gap-4">
           <div className="grid gap-2">
             <Label htmlFor="email" className="text-gray-900">Email</Label>
-            <Input 
-              id="email" 
-              type="email" 
-              placeholder="your@email.com" 
-              required 
+            <Input
+              id="email"
+              type="email"
+              placeholder="your@email.com"
+              required
+              value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="border-yellow-100/50 focus:border-amber-500 focus:ring-yellow-400/20"
             />
@@ -79,10 +88,11 @@ export default function SignupPage() {
           <div className="grid gap-2">
             <Label htmlFor="password" className="text-gray-900">Password</Label>
             <div className="relative">
-              <Input 
-                id="password" 
-                type={showPassword ? "text" : "password"} 
-                required 
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="border-yellow-100/50 focus:border-amber-500 focus:ring-yellow-400/20 pr-10"
               />

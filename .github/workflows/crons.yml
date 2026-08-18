@@ -15,6 +15,15 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             "${{ secrets.APP_URL }}/api/cron/cleanup-expired-requests"
 
+  cleanup-temp-signups:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run cleanup
+        run: |
+          curl -s -X GET \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/cleanup-temp-signups"
+
   evaluate-token-cycles:
     runs-on: ubuntu-latest
     steps:
