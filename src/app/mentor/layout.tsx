@@ -21,6 +21,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AccountFrozenOverlay } from '@/components/AccountFrozenOverlay';
+import { ContactSupportButton } from '@/components/ContactSupportButton';
 
 const navigationItems = [
   { title: 'Tasks',          url: '/mentor/tasks',            icon: CheckSquare },
@@ -225,6 +226,8 @@ export default function MentorLayout({ children }: { children: React.ReactNode }
                     : 'This token is for requesting meetings'}
                 </div>
               </div>
+
+              <ContactSupportButton />
 
               <Button variant="outline" size="sm" onClick={handleLogout} className="w-full justify-start gap-2 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors text-sm">
                 <LogOut className="w-4 h-4" />Logout

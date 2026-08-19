@@ -6,6 +6,7 @@ interface EmailParams {
   subject: string;
   template: string;
   data: Record<string, any>;
+  replyTo?: string;
   attachments?: Array<{
     filename: string;
     content: string;
@@ -133,6 +134,7 @@ export async function sendEmail({
   subject,
   template,
   data,
+  replyTo,
   attachments = [],
 }: EmailParams): Promise<void> {
   console.log('📧 sendEmail called with:', { to, subject, template });
@@ -387,6 +389,26 @@ export async function sendEmail({
       `<p style="margin: 0;">Â© 2026 CONNEXT. All rights reserved.</p>`
     ),
 
+    'contact-message': (data) => getEmailWrapper(
+      `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">📩 New Contact Message</h2>`,
+      `
+        <p style="font-size: 16px; margin: 0 0 24px 0;">A user sent a message through the app.</p>
+
+        <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 0 0 20px 0;">
+          <p style="margin: 0 0 8px 0; color: #374151;"><strong>From:</strong> ${escapeHtml(data.name || 'Unknown')} (${escapeHtml(data.email || 'no email')})</p>
+          <p style="margin: 0; color: #374151;"><strong>Role:</strong> ${escapeHtml(data.role || 'unknown')}</p>
+          ${data.subject ? `<p style="margin: 8px 0 0 0; color: #374151;"><strong>Subject:</strong> ${escapeHtml(data.subject)}</p>` : ''}
+        </div>
+
+        <div style="background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px;">
+          <p style="margin: 0; color: #111827; font-size: 15px; white-space: pre-wrap;">${escapeHtml(data.message || '')}</p>
+        </div>
+
+        <p style="font-size: 13px; color: #9ca3af; margin-top: 24px;">Reply directly to this email to respond to ${escapeHtml(data.name || 'the sender')}.</p>
+      `,
+      `<p style="margin: 0;">© 2026 CONNEXT. All rights reserved.</p>`
+    ),
+
     'password-reset-code': (data) => getEmailWrapper(
       `<h2 style="margin: 0; color: #1f2937; font-size: 24px;">🔐 Password Reset Request</h2>`,
       `
@@ -549,6 +571,7 @@ export async function sendEmail({
     const info = await transporter.sendMail({
       from: `"CONNEXT" <${process.env.EMAIL_USER}>`,
       to,
+      replyTo,
       subject,
       html,
       attachments,
