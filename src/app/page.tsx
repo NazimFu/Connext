@@ -15,7 +15,6 @@ interface FeaturedMentor {
   expertise: string;
   image: string;
   hint: string;
-  institution_photo: { url: string; name: string }[];
 }
 
 interface InstitutionLogo {
@@ -69,9 +68,8 @@ const FALLBACK_INSTITUTIONS = [
 export default function Home() {
   const [featuredMentors, setFeaturedMentors] = useState<FeaturedMentor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [institutionLogos, setInstitutionLogos] = useState<InstitutionLogo[]>([]);
-  const [driveLogos, setDriveLogos] = useState<InstitutionLogo[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [curatedLogos, setCuratedLogos] = useState<InstitutionLogo[]>([]);
   const [mentorPage, setMentorPage] = useState(0);
   const [floatingNav, setFloatingNav] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -91,22 +89,6 @@ export default function Home() {
             (mentor: FeaturedMentor) => mentor?.name && !isPlaceholderMentor(mentor.name)
           );
           setFeaturedMentors(sanitizedMentors);
-          const allPhotos: InstitutionLogo[] = [];
-          sanitizedMentors.forEach((mentor: FeaturedMentor) => {
-            if (Array.isArray(mentor.institution_photo)) {
-              mentor.institution_photo.forEach((photo) => {
-                const url = typeof photo === 'string' ? photo : photo?.url;
-                const name = typeof photo === 'string' ? 'Institution' : (photo?.name || 'Institution');
-                if (url && url.trim()) allPhotos.push({ url: url.trim(), name });
-              });
-            }
-          });
-          const seen = new Set<string>();
-          setInstitutionLogos(allPhotos.filter(p => {
-            if (seen.has(p.url)) return false;
-            seen.add(p.url);
-            return true;
-          }));
         } else {
           setFetchError(data.message || 'No mentors found');
         }
@@ -120,9 +102,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/institution-logos')
-      .then(r => r.json())
-      .then(data => { if (Array.isArray(data.logos)) setDriveLogos(data.logos); })
+    fetch('/api/mentor-logos')
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data.logos)) setCuratedLogos(data.logos); })
       .catch(() => {});
   }, []);
 
@@ -175,11 +157,11 @@ export default function Home() {
   const visibleMentors = featuredMentors.slice(mentorPage * mentorsPerPage, mentorPage * mentorsPerPage + mentorsPerPage);
   const getInitials = (name: string) => name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
 
-  // Drive folder logos take priority; fall back to mentor-pulled logos, then text pills
-  const activeLogos = driveLogos.length > 0 ? driveLogos : institutionLogos;
-  const hasRealLogos = activeLogos.length > 0;
+  // Logos are whatever image files currently sit in public/Mentor Logos/, discovered
+  // via /api/mentor-logos — falls back to text pills if that folder is empty.
+  const hasRealLogos = curatedLogos.length > 0;
   const marqueeLogos = hasRealLogos
-    ? [...activeLogos, ...activeLogos, ...activeLogos]
+    ? [...curatedLogos, ...curatedLogos, ...curatedLogos]
     : [...FALLBACK_INSTITUTIONS, ...FALLBACK_INSTITUTIONS, ...FALLBACK_INSTITUTIONS];
 
   return (
@@ -965,7 +947,6 @@ export default function Home() {
             <div className="free-badge">
               <span className="free-badge-icon"><Sparkles size={14} /></span>
               <span className="free-badge-text">100% Free to Join</span>
-              <span className="free-badge-sub">— no credit card required</span>
             </div>
 
             {/* ══════════════════════════════════════════════
@@ -975,7 +956,7 @@ export default function Home() {
             <div className="institutions-strip">
               <div className="institutions-label">
                 <div className="institutions-label-line" />
-                <span className="institutions-label-text">Mentors from leading institutions</span>
+                <span className="institutions-label-text">Mentors from leading institutions/companies</span>
                 <div className="institutions-label-line" />
               </div>
 
@@ -986,9 +967,9 @@ export default function Home() {
                         <div key={`logo-${i}`} className="inst-logo-card" title={logo.name}>
                           <span className="inst-accent-dot" />
                           <img
-                            src={getGoogleDriveImageUrl(logo.url)}
+                            src={logo.url}
                             alt={logo.name}
-                            loading={i < 10 ? 'eager' : 'lazy'}
+                            loading="eager"
                             onError={(e) => {
                               // Graceful fallback: hide broken img, show institution name
                               const card = e.currentTarget.closest('.inst-logo-card') as HTMLElement;
