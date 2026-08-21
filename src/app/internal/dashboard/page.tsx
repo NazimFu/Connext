@@ -723,6 +723,12 @@ export default function InternalDashboard() {
             <div>
               <Label>Notes</Label>
               <Textarea value={reportNotes} onChange={e => setReportNotes(e.target.value)} placeholder="Add notes..." className="mt-1.5" />
+              {reportDialog.action === "accept" && (
+                <p className="text-xs text-gray-400 mt-1">This note will be included in the email sent to the reported user.</p>
+              )}
+              {reportDialog.action === "reject" && (
+                <p className="text-xs text-gray-400 mt-1">This note will be included in the email sent to the reporting mentor.</p>
+              )}
             </div>
           </div>
           <AlertDialogFooter>

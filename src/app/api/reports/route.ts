@@ -504,6 +504,26 @@ export async function PATCH(request: Request) {
         await mentorContainer.item(reportingMentor.id, reportingMentor.id).patch(mirrorOperations);
       }
 
+      // Notify the mentee their account has been unfrozen
+      const liftRecipientEmail = requester.mentee_email || requester.mentor_email || requester.email;
+      const liftRecipientName = requester.mentee_name || requester.mentor_name || requester.name || 'there';
+
+      if (liftRecipientEmail) {
+        try {
+          await sendEmail({
+            to: liftRecipientEmail,
+            subject: 'Your Connext Account Has Been Unfrozen',
+            template: 'mentee-ban-lifted',
+            data: {
+              menteeName: liftRecipientName,
+              notes: extraNotes.length ? extraNotes.join(' ') : null,
+            },
+          });
+        } catch (emailError) {
+          console.error('Failed to send ban-lifted email:', emailError);
+        }
+      }
+
       return NextResponse.json({
         success: true,
         message: `Ban lifted — report remains accepted.${extraNotes.length ? ' ' + extraNotes.join(' ') : ''}`,
@@ -762,13 +782,31 @@ export async function PATCH(request: Request) {
                 menteeName: recipientName,
                 reason: selectedReason,
                 adminNotes: notes || null,
-                date: meeting?.date || null,
-                time: meeting?.time || null,
-                mentorName: meeting?.mentor_name || mentor?.mentor_name || 'Your mentor',
               },
             });
           } catch (emailError) {
             console.error('Failed to send report approved email:', emailError);
+          }
+        }
+
+        // Confirm to the filing mentor that their report was accepted
+        if (mentor?.mentor_email) {
+          try {
+            await sendEmail({
+              to: mentor.mentor_email,
+              subject: 'Your Report Has Been Approved',
+              template: 'mentor-report-accepted',
+              data: {
+                mentorName: mentor.mentor_name,
+                menteeName: meeting?.mentee_name || recipientName,
+                date: meeting?.date || null,
+                time: meeting?.time || null,
+                reportReason: (meeting as any)?.mentor_report?.reason || null,
+                reviewNotes: notes || null,
+              },
+            });
+          } catch (emailError) {
+            console.error('Failed to send mentor report-accepted email:', emailError);
           }
         }
       } else if (normalizedStatus === 'rejected' || normalizedStatus === 'pending') {
@@ -791,6 +829,28 @@ export async function PATCH(request: Request) {
           await menteeContainer.item(requester.id, requester.id).replace(requester);
         }
         console.log(`[Reports] accountFrozen=false set on ${menteeIsInMentorContainer ? 'mentor' : 'mentee'} ${requester.id}`);
+
+        // Only the filing mentor is told a report was rejected — the mentee
+        // was never notified anything happened, so they stay uninformed here too.
+        if (normalizedStatus === 'rejected' && mentor?.mentor_email) {
+          try {
+            await sendEmail({
+              to: mentor.mentor_email,
+              subject: 'Your Report Has Been Reviewed',
+              template: 'mentor-report-rejected',
+              data: {
+                mentorName: mentor.mentor_name,
+                menteeName: meeting?.mentee_name || requester.mentee_name || requester.mentor_name,
+                date: meeting?.date || null,
+                time: meeting?.time || null,
+                reportReason: (meeting as any)?.mentor_report?.reason || null,
+                reviewNotes: notes || null,
+              },
+            });
+          } catch (emailError) {
+            console.error('Failed to send mentor report-rejected email:', emailError);
+          }
+        }
       }
     }
 
