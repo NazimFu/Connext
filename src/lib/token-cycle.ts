@@ -414,21 +414,73 @@ export const getTokenReplenishState = (
   return { status: 'ready_to_replenish', message: 'Token ready to replenish' };
 };
 
+// Buffer after a meeting's scheduled end before it's treated as "occurred" (matches
+// the mentor/mentee delete-account routes' own copy of this window).
+const MEETING_PAST_WINDOW_HOURS = 2;
+
 /**
- * Replenishes a token if all conditions are met.
+ * Whether a meeting's date/time (plus a small buffer) has already passed.
+ * `scheduled_status` never flips to 'past' in storage — it's computed on read —
+ * so callers that need "still upcoming" vs. "already happened" must check this.
+ */
+export const hasMeetingOccurred = (
+  dateStr: string,
+  timeStr: string,
+  nowUtc: Date = new Date()
+): boolean => {
+  const meetingDateTime = getMeetingDateTime(dateStr, timeStr, MEETING_STORAGE_TZ);
+  if (!meetingDateTime) return false;
+  return nowUtc.getTime() >= meetingDateTime.getTime() + MEETING_PAST_WINDOW_HOURS * 60 * 60 * 1000;
+};
+
+/**
+ * Returns 0-100: how far the current cooldown is toward its end date.
+ * 100 whenever there's no active pending cycle (nothing left to wait on).
+ */
+export const getCooldownProgressPercent = (
+  tokenCycle: TokenCycle | null | undefined,
+  nowUtc: Date = new Date()
+): number => {
+  if (!tokenCycle || tokenCycle.status !== 'pending') {
+    return 100;
+  }
+
+  const tokenUsedAt = parseISO(tokenCycle.tokenUsedAt);
+  if (Number.isNaN(tokenUsedAt.getTime())) {
+    return 0;
+  }
+
+  const cooldownEnd = addDays(tokenUsedAt, REPLENISHMENT_COOLDOWN_DAYS);
+  const totalMs = cooldownEnd.getTime() - tokenUsedAt.getTime();
+  if (totalMs <= 0) {
+    return 100;
+  }
+
+  const elapsedMs = nowUtc.getTime() - tokenUsedAt.getTime();
+  const percent = (elapsedMs / totalMs) * 100;
+  return Math.max(0, Math.min(100, Math.round(percent)));
+};
+
+/**
+ * Replenishes a token if all conditions are met (or unconditionally when
+ * `options.force` is set — used by the admin override, bypasses the
+ * feedback/cooldown eligibility check entirely).
  */
 export const replenishTokenIfEligible = (
   menteeDoc: any,
-  nowUtc: Date = new Date()
+  nowUtc: Date = new Date(),
+  options: { force?: boolean } = {}
 ): { replenished: boolean; reason?: string; tokensAfter?: number } => {
   if (!menteeDoc?.token_cycle) {
     return { replenished: false, reason: 'No token cycle found' };
   }
 
-  const checkResult = canReplenishToken(menteeDoc.token_cycle, nowUtc);
-  if (!checkResult.canReplenish) {
-    console.log(`[Token Replenishment] Cannot replenish: ${checkResult.reason}`);
-    return { replenished: false, reason: checkResult.reason };
+  if (!options.force) {
+    const checkResult = canReplenishToken(menteeDoc.token_cycle, nowUtc);
+    if (!checkResult.canReplenish) {
+      console.log(`[Token Replenishment] Cannot replenish: ${checkResult.reason}`);
+      return { replenished: false, reason: checkResult.reason };
+    }
   }
 
   const tokensBefore = clampToken(menteeDoc.tokens);

@@ -1,14 +1,19 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,7 +28,7 @@ import {
   Check, X, Eye, Mail, User, Clock, Calendar, Briefcase, Star,
   Shield, ShieldAlert, AlertTriangle, RefreshCcw, Loader2,
   ChevronLeft, ChevronRight, CheckCircle2, XCircle, ExternalLink,
-  RefreshCw, KeyRound, Activity,
+  RefreshCw, KeyRound, Activity, Zap,
 } from "lucide-react";
 
 const DEVELOPER_PASSWORD = "LuminiDev2024!";
@@ -61,6 +66,41 @@ interface TokenStatus {
   access_token_expired?: boolean; scope?: string;
   auth_url: string; message?: string;
 }
+interface OngoingMeeting {
+  meetingId: string; role: "mentor" | "mentee"; counterpartName: string;
+  date: string; time: string; message: string; feedbackSubmitted: boolean;
+}
+interface TokenAccount {
+  id: string; name: string; email: string; createdAt: number | string | null; tokens: number;
+  tokenCycle: {
+    status: "pending" | "replenished" | "forfeited";
+    replenishState: {
+      status: "not_pending" | "waiting_for_feedback" | "waiting_for_cooldown" | "ready_to_replenish";
+      message: string; daysRemaining?: number; minutesRemaining?: number;
+    };
+    progressPercent: number;
+  } | null;
+  ongoingMeetingsCount: number;
+  ongoingMeetings: OngoingMeeting[];
+  totalMeetingsCount: number;
+}
+
+const TOKEN_STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  not_pending: { label: "No active cycle", className: "bg-gray-100 text-gray-600" },
+  waiting_for_feedback: { label: "Waiting for feedback", className: "bg-amber-100 text-amber-700" },
+  waiting_for_cooldown: { label: "Cooldown", className: "bg-blue-100 text-blue-700" },
+  ready_to_replenish: { label: "Ready to replenish", className: "bg-green-100 text-green-700" },
+};
+
+type TokenAccountSort = "name-asc" | "name-desc" | "oldest" | "newest" | "ongoing-first";
+
+const TOKEN_ACCOUNT_SORT_OPTIONS: { value: TokenAccountSort; label: string }[] = [
+  { value: "name-asc", label: "Name A–Z" },
+  { value: "name-desc", label: "Name Z–A" },
+  { value: "newest", label: "Newest accounts" },
+  { value: "oldest", label: "Oldest accounts" },
+  { value: "ongoing-first", label: "Ongoing meetings first" },
+];
 
 const REPORT_REASON_OPTIONS = [
   "Inappropriate behavior",
@@ -178,6 +218,17 @@ export default function InternalDashboard() {
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenFlash, setTokenFlash] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  // Token accounts (mentor/mentee)
+  const [tokenAccounts, setTokenAccounts] = useState<{ mentor: TokenAccount[]; mentee: TokenAccount[] }>({ mentor: [], mentee: [] });
+  const [tokenAccountsLoading, setTokenAccountsLoading] = useState<{ mentor: boolean; mentee: boolean }>({ mentor: false, mentee: false });
+  const [tokenAccountsError, setTokenAccountsError] = useState<{ mentor: string; mentee: string }>({ mentor: "", mentee: "" });
+  const [tokenAccountsSearch, setTokenAccountsSearch] = useState<{ mentor: string; mentee: string }>({ mentor: "", mentee: "" });
+  const [tokenAccountsSort, setTokenAccountsSort] = useState<{ mentor: TokenAccountSort; mentee: TokenAccountSort }>({ mentor: "newest", mentee: "newest" });
+  const [meetingsDialog, setMeetingsDialog] = useState<{ open: boolean; account: TokenAccount | null }>({ open: false, account: null });
+  const [replenishDialog, setReplenishDialog] = useState<{ open: boolean; account: TokenAccount | null; role: "mentor" | "mentee" }>({ open: false, account: null, role: "mentor" });
+  const [replenishing, setReplenishing] = useState(false);
+  const [replenishError, setReplenishError] = useState("");
+
   /* ── auth ── */
   const handleLogin = () => {
     if (password === DEVELOPER_PASSWORD) { setIsAuthenticated(true); setAuthError(""); }
@@ -210,10 +261,52 @@ export default function InternalDashboard() {
     finally { setTokenLoading(false); }
   }, []);
 
+  /* ── token accounts (mentor/mentee) ── */
+  const fetchTokenAccounts = useCallback(async (role: "mentor" | "mentee") => {
+    setTokenAccountsLoading(s => ({ ...s, [role]: true }));
+    setTokenAccountsError(s => ({ ...s, [role]: "" }));
+    try {
+      const res = await fetch(`/api/internal/token-accounts?role=${role}`, {
+        headers: { Authorization: `Bearer ${password}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to load accounts");
+      setTokenAccounts(s => ({ ...s, [role]: data.accounts ?? [] }));
+    } catch (e) {
+      setTokenAccountsError(s => ({ ...s, [role]: e instanceof Error ? e.message : "Failed to load accounts" }));
+    } finally {
+      setTokenAccountsLoading(s => ({ ...s, [role]: false }));
+    }
+  }, [password]);
+
+  const handleForceReplenish = async () => {
+    const { account, role } = replenishDialog;
+    if (!account) return;
+    setReplenishing(true);
+    setReplenishError("");
+    try {
+      const res = await fetch("/api/internal/token-accounts/force-replenish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${password}` },
+        body: JSON.stringify({ userId: account.id, role }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to replenish");
+      setReplenishDialog({ open: false, account: null, role: "mentor" });
+      fetchTokenAccounts(role);
+    } catch (e) {
+      setReplenishError(e instanceof Error ? e.message : "Failed to replenish");
+    } finally {
+      setReplenishing(false);
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated) return;
     fetchAll();
     fetchTokenStatus();
+    fetchTokenAccounts("mentor");
+    fetchTokenAccounts("mentee");
     // Check OAuth callback params
     const params = new URLSearchParams(window.location.search);
     if (params.get("success") === "true") {
@@ -223,7 +316,7 @@ export default function InternalDashboard() {
       setTokenFlash({ type: "error", text: `Authorization failed: ${decodeURIComponent(params.get("error")!)}` });
       window.history.replaceState({}, "", window.location.pathname);
     }
-  }, [isAuthenticated, fetchAll, fetchTokenStatus]);
+  }, [isAuthenticated, fetchAll, fetchTokenStatus, fetchTokenAccounts]);
 
   /* ── review ── */
   const handleReview = async () => {
@@ -401,6 +494,8 @@ export default function InternalDashboard() {
               { value: "applications", label: "Applications", badge: pendingMentees.length + pendingMentors.length },
               { value: "cancellations", label: "Cancellations", badge: pendingCancels.length },
               { value: "reports", label: "Reports", badge: pendingReports.length },
+              { value: "mentors", label: "Mentor Accounts", badge: 0 },
+              { value: "mentees", label: "Mentee Accounts", badge: 0 },
               { value: "google-auth", label: "Google Auth", badge: tokenStatus?.access_token_expired ? 1 : 0 },
             ].map(t => (
               <TabsTrigger key={t.value} value={t.value}
@@ -539,6 +634,38 @@ export default function InternalDashboard() {
                   ))}
                 </div>
               )}
+          </TabsContent>
+
+          {/* ══════════════ MENTOR ACCOUNTS ══════════════ */}
+          <TabsContent value="mentors">
+            <TokenAccountsTable
+              role="mentor"
+              accounts={tokenAccounts.mentor}
+              loading={tokenAccountsLoading.mentor}
+              error={tokenAccountsError.mentor}
+              search={tokenAccountsSearch.mentor}
+              sort={tokenAccountsSort.mentor}
+              onSearchChange={v => setTokenAccountsSearch(s => ({ ...s, mentor: v }))}
+              onSortChange={v => setTokenAccountsSort(s => ({ ...s, mentor: v }))}
+              onOpenMeetings={account => setMeetingsDialog({ open: true, account })}
+              onOpenReplenish={account => setReplenishDialog({ open: true, account, role: "mentor" })}
+            />
+          </TabsContent>
+
+          {/* ══════════════ MENTEE ACCOUNTS ══════════════ */}
+          <TabsContent value="mentees">
+            <TokenAccountsTable
+              role="mentee"
+              accounts={tokenAccounts.mentee}
+              loading={tokenAccountsLoading.mentee}
+              error={tokenAccountsError.mentee}
+              search={tokenAccountsSearch.mentee}
+              sort={tokenAccountsSort.mentee}
+              onSearchChange={v => setTokenAccountsSearch(s => ({ ...s, mentee: v }))}
+              onSortChange={v => setTokenAccountsSort(s => ({ ...s, mentee: v }))}
+              onOpenMeetings={account => setMeetingsDialog({ open: true, account })}
+              onOpenReplenish={account => setReplenishDialog({ open: true, account, role: "mentee" })}
+            />
           </TabsContent>
 
           {/* ══════════════ GOOGLE AUTH ══════════════ */}
@@ -769,11 +896,196 @@ export default function InternalDashboard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ══ Ongoing Meetings Dialog ══ */}
+      <Dialog open={meetingsDialog.open} onOpenChange={open => setMeetingsDialog(d => ({ ...d, open, account: open ? d.account : null }))}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Ongoing Meetings — {meetingsDialog.account?.name}</DialogTitle>
+            <DialogDescription>Confirmed, upcoming meetings for this account.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            {meetingsDialog.account?.ongoingMeetings.map(m => (
+              <div key={m.meetingId} className="rounded-lg border border-gray-200 p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium text-gray-900">
+                    {m.counterpartName} <span className="text-gray-400 font-normal">— as {m.role}</span>
+                  </span>
+                  {m.feedbackSubmitted ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-green-700"><CheckCircle2 className="h-3.5 w-3.5" />Feedback: Yes</span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs text-red-600"><XCircle className="h-3.5 w-3.5" />Feedback: No</span>
+                  )}
+                </div>
+                <div className="text-sm text-gray-600">{m.date} · {m.time}</div>
+                {m.message && <div className="text-xs text-gray-500 mt-1 italic">"{m.message}"</div>}
+              </div>
+            ))}
+            {(!meetingsDialog.account || meetingsDialog.account.ongoingMeetings.length === 0) && (
+              <p className="text-sm text-gray-400 text-center py-4">No ongoing meetings.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══ Force Replenish Dialog ══ */}
+      <AlertDialog open={replenishDialog.open} onOpenChange={open => { if (!open) { setReplenishDialog({ open: false, account: null, role: "mentor" }); setReplenishError(""); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Force replenish this token?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This cancels {replenishDialog.account?.name}'s current waiting cycle immediately — regardless of
+              feedback or cooldown status — and marks it replenished. They'll get an email notifying them.
+              This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {replenishError && <p className="text-sm text-red-600">{replenishError}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={replenishing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleForceReplenish} disabled={replenishing} className="bg-amber-600 hover:bg-amber-700">
+              {replenishing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Force Replenish"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
 /* ─────────────────────────────── SUB-COMPONENTS ────────────────────── */
+
+function TokenAccountsTable({ role, accounts, loading, error, search, sort, onSearchChange, onSortChange, onOpenMeetings, onOpenReplenish }: {
+  role: "mentor" | "mentee";
+  accounts: TokenAccount[];
+  loading: boolean;
+  error: string;
+  search: string;
+  sort: TokenAccountSort;
+  onSearchChange: (v: string) => void;
+  onSortChange: (v: TokenAccountSort) => void;
+  onOpenMeetings: (account: TokenAccount) => void;
+  onOpenReplenish: (account: TokenAccount) => void;
+}) {
+  const router = useRouter();
+
+  const visibleAccounts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const filtered = q
+      ? accounts.filter(a => (a.name || "").toLowerCase().includes(q) || (a.email || "").toLowerCase().includes(q))
+      : accounts;
+    const sorted = [...filtered];
+    switch (sort) {
+      case "name-asc":
+        sorted.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        break;
+      case "name-desc":
+        sorted.sort((a, b) => (b.name || "").localeCompare(a.name || ""));
+        break;
+      case "oldest":
+        sorted.sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
+        break;
+      case "newest":
+        sorted.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+        break;
+      case "ongoing-first":
+        sorted.sort((a, b) => b.ongoingMeetingsCount - a.ongoingMeetingsCount);
+        break;
+    }
+    return sorted;
+  }, [accounts, search, sort]);
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        <Input
+          value={search}
+          onChange={e => onSearchChange(e.target.value)}
+          placeholder={`Search ${role}s by name or email...`}
+          className="sm:max-w-xs"
+        />
+        <select
+          value={sort}
+          onChange={e => onSortChange(e.target.value as TokenAccountSort)}
+          className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+        >
+          {TOKEN_ACCOUNT_SORT_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
+      {loading ? (
+        <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200 text-left text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Account</th>
+                  <th className="px-4 py-3 font-medium">Token Status</th>
+                  <th className="px-4 py-3 font-medium w-48">Replenish Progress</th>
+                  <th className="px-4 py-3 font-medium">Ongoing Meetings</th>
+                  <th className="px-4 py-3 font-medium">Total Meetings</th>
+                  <th className="px-4 py-3 font-medium text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {visibleAccounts.map(account => {
+                  const badge = account.tokenCycle
+                    ? TOKEN_STATUS_BADGE[account.tokenCycle.replenishState.status]
+                    : TOKEN_STATUS_BADGE.not_pending;
+                  const canForceReplenish = account.tokenCycle?.status === "pending";
+                  return (
+                    <tr key={account.id} className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => router.push(`/internal/accounts/${role}/${encodeURIComponent(account.id)}`)}>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-gray-900">{account.name || "—"}</div>
+                        <div className="text-xs text-gray-500">{account.email || "—"}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge className={badge.className}>{badge.label}</Badge>
+                        {account.tokenCycle?.replenishState.daysRemaining !== undefined && (
+                          <div className="text-xs text-gray-400 mt-1">{account.tokenCycle.replenishState.daysRemaining}d remaining</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Progress value={account.tokenCycle?.progressPercent ?? 100} className="h-2.5" />
+                        <div className="text-xs text-gray-400 mt-1">{account.tokenCycle?.progressPercent ?? 100}%</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button type="button"
+                          onClick={e => { e.stopPropagation(); onOpenMeetings(account); }}
+                          disabled={account.ongoingMeetingsCount === 0}
+                          className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-medium disabled:text-gray-400 disabled:cursor-not-allowed">
+                          <Calendar className="h-3.5 w-3.5" />
+                          {account.ongoingMeetingsCount}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">{account.totalMeetingsCount}</td>
+                      <td className="px-4 py-3 text-right">
+                        <Button size="sm" variant="outline" disabled={!canForceReplenish}
+                          onClick={e => { e.stopPropagation(); onOpenReplenish(account); }}
+                          className="gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-40">
+                          <Zap className="h-3.5 w-3.5" />
+                          Force Replenish
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {visibleAccounts.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">No {role} accounts found.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function EmptyState({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
