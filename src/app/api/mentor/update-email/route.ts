@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
 import { database } from '@/lib/cosmos';
 
 export async function POST(request: Request) {
