@@ -76,32 +76,80 @@ function FieldRow({ label, value, onAdd }: { label: string; value?: string; onAd
   );
 }
 
-interface TagInputProps { tags: string[]; setTags: (tags: string[]) => void; placeholder: string; }
-function TagInput({ tags, setTags, placeholder }: TagInputProps) {
+interface TagInputProps { tags: string[]; setTags: (tags: string[]) => void; placeholder: string; suggestions?: string[]; }
+function TagInput({ tags, setTags, placeholder, suggestions = [] }: TagInputProps) {
   const [inputValue, setInputValue] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const filteredSuggestions = suggestions.filter(
+    s => s.toLowerCase().includes(inputValue.toLowerCase()) && !tags.includes(s)
+  );
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const addTag = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed && !tags.includes(trimmed)) setTags([...tags, trimmed]);
+    setInputValue('');
+    setShowDropdown(false);
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if ((e.key === 'Enter' || e.key === ',') && inputValue.trim()) {
       e.preventDefault();
-      if (!tags.includes(inputValue.trim())) setTags([...tags, inputValue.trim()]);
-      setInputValue('');
+      addTag(inputValue);
     } else if (e.key === 'Backspace' && !inputValue && tags.length > 0) {
       setTags(tags.slice(0, -1));
+    } else if (e.key === 'Escape') {
+      setShowDropdown(false);
     }
   };
+
   return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap gap-1.5 p-2 min-h-[44px] rounded-xl border border-neutral-200 bg-white transition-colors focus-within:border-amber-600 focus-within:ring-2 focus-within:ring-amber-600/20">
-        {tags.map((tag, index) => (
-          <span key={index} className="inline-flex items-center gap-1 rounded-lg bg-neutral-100 border border-neutral-200 pl-2.5 pr-1.5 py-1 text-sm text-neutral-700">
-            {tag}
-            <button type="button" onClick={() => setTags(tags.filter((_, i) => i !== index))} className="rounded p-0.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-200/70 transition-colors" aria-label={`Remove ${tag}`}>
-              <X className="h-3 w-3" />
-            </button>
-          </span>
-        ))}
-        <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value.replace(',', ''))} onKeyDown={handleKeyDown}
-          placeholder={tags.length === 0 ? placeholder : 'Add more…'}
-          className="flex-1 min-w-[160px] bg-transparent border-0 outline-none text-neutral-800 placeholder-neutral-400 text-sm px-1" />
+    <div className="space-y-1.5" ref={containerRef}>
+      <div className="relative">
+        <div className="flex flex-wrap gap-1.5 p-2 min-h-[44px] rounded-xl border border-neutral-200 bg-white transition-colors focus-within:border-amber-600 focus-within:ring-2 focus-within:ring-amber-600/20">
+          {tags.map((tag, index) => (
+            <span key={index} className="inline-flex items-center gap-1 rounded-lg bg-neutral-100 border border-neutral-200 pl-2.5 pr-1.5 py-1 text-sm text-neutral-700">
+              {tag}
+              <button type="button" onClick={() => setTags(tags.filter((_, i) => i !== index))} className="rounded p-0.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-200/70 transition-colors" aria-label={`Remove ${tag}`}>
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          <input type="text" value={inputValue}
+            onChange={(e) => {
+              setInputValue(e.target.value.replace(',', ''));
+              setShowDropdown(e.target.value.length > 0 && suggestions.length > 0);
+            }}
+            onFocus={() => { if (inputValue.length > 0 && suggestions.length > 0) setShowDropdown(true); }}
+            onKeyDown={handleKeyDown}
+            placeholder={tags.length === 0 ? placeholder : 'Add more…'}
+            className="flex-1 min-w-[160px] bg-transparent border-0 outline-none text-neutral-800 placeholder-neutral-400 text-sm px-1" />
+        </div>
+        {showDropdown && filteredSuggestions.length > 0 && (
+          <div className="absolute z-20 w-full mt-1 bg-white border border-neutral-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
+            {filteredSuggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); addTag(suggestion); }}
+                className="w-full text-left px-3 py-2 hover:bg-neutral-50 text-sm border-b border-neutral-100 last:border-0 text-neutral-700"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <p className="text-xs text-neutral-500 px-1">Type an item, then press Enter to add it. Commas also work.</p>
     </div>
@@ -297,6 +345,7 @@ function MentorProfileEdit() {
   const [newInstitutionName, setNewInstitutionName] = useState('');
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [institutionSuggestions, setInstitutionSuggestions] = useState<string[]>([]);
+  const [specializationSuggestions, setSpecializationSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   useEffect(() => {
@@ -366,16 +415,23 @@ function MentorProfileEdit() {
         const res = await fetch('/api/mentors');
         if (!res.ok) return;
         const mentors = await res.json();
-        const s = new Set<string>();
+        const instSet = new Set<string>();
+        const specSet = new Set<string>();
         mentors.forEach((m: any) => {
           if (Array.isArray(m.institution_photo)) {
             m.institution_photo.forEach((p: any) => {
               const name = typeof p === 'string' ? null : p.name;
-              if (name && name !== 'Institution') s.add(name);
+              if (name && name !== 'Institution') instSet.add(name);
+            });
+          }
+          if (Array.isArray(m.specialization)) {
+            m.specialization.forEach((spec: string) => {
+              if (spec && spec.trim()) specSet.add(spec.trim());
             });
           }
         });
-        setInstitutionSuggestions(Array.from(s).sort());
+        setInstitutionSuggestions(Array.from(instSet).sort());
+        setSpecializationSuggestions(Array.from(specSet).sort());
       } catch {}
     };
     fetch_();
@@ -727,7 +783,7 @@ function MentorProfileEdit() {
 
           {/* Expertise */}
           <SectionCard title="Expertise" description="The areas you mentor and consult in.">
-            <div className="space-y-2"><Label className={LABEL}>Specializations <span className="text-red-500">*</span></Label><TagInput tags={formData.specialization} setTags={(t) => setFormData(prev => ({ ...prev, specialization: t }))} placeholder="e.g., Web Development, Data Science" /></div>
+            <div className="space-y-2"><Label className={LABEL}>Specializations <span className="text-red-500">*</span></Label><TagInput tags={formData.specialization} setTags={(t) => setFormData(prev => ({ ...prev, specialization: t }))} placeholder="e.g., Web Development, Data Science" suggestions={specializationSuggestions} /></div>
             <div className="space-y-2"><Label className={LABEL}>Fields of consultation</Label><TagInput tags={formData.field_of_consultation} setTags={(t) => setFormData(prev => ({ ...prev, field_of_consultation: t }))} placeholder="e.g., Career Planning, Technical Skills" /></div>
             <div className="space-y-2"><Label className={LABEL}>Skills</Label><TagInput tags={formData.skills} setTags={(t) => setFormData(prev => ({ ...prev, skills: t }))} placeholder="e.g., JavaScript, Leadership" /></div>
           </SectionCard>

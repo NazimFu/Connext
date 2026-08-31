@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, KeyboardEvent, useEffect } from 'react';
+import { useState, KeyboardEvent, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth } from "../../../lib/firebase";
 import { createUserWithEmailAndPassword } from 'firebase/auth';
@@ -32,10 +32,13 @@ interface TagInputProps {
   setTags: (tags: string[]) => void;
   placeholder: string;
   accentColor: string;
+  suggestions?: string[];
 }
 
-function TagInput({ tags, setTags, placeholder, accentColor }: TagInputProps) {
+function TagInput({ tags, setTags, placeholder, accentColor, suggestions = [] }: TagInputProps) {
   const [inputValue, setInputValue] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const colorClasses: Record<string, { bg: string; text: string; border: string; hover: string }> = {
     yellow: { bg: 'bg-yellow-100', text: 'text-black', border: 'border-yellow-300', hover: 'hover:bg-yellow-200' },
@@ -44,15 +47,37 @@ function TagInput({ tags, setTags, placeholder, accentColor }: TagInputProps) {
 
   const colors = colorClasses[accentColor] || colorClasses.yellow;
 
+  const filteredSuggestions = suggestions.filter(
+    s => s.toLowerCase().includes(inputValue.toLowerCase()) && !tags.includes(s)
+  );
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const addTag = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed && !tags.includes(trimmed)) {
+      setTags([...tags, trimmed]);
+    }
+    setInputValue('');
+    setShowDropdown(false);
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if ((e.key === 'Enter' || e.key === ',') && inputValue.trim()) {
       e.preventDefault();
-      if (!tags.includes(inputValue.trim())) {
-        setTags([...tags, inputValue.trim()]);
-      }
-      setInputValue('');
+      addTag(inputValue);
     } else if (e.key === 'Backspace' && !inputValue && tags.length > 0) {
       setTags(tags.slice(0, -1));
+    } else if (e.key === 'Escape') {
+      setShowDropdown(false);
     }
   };
 
@@ -61,33 +86,56 @@ function TagInput({ tags, setTags, placeholder, accentColor }: TagInputProps) {
   };
 
   return (
-    <div className="tag-input-container">
-      <div className={`flex flex-wrap gap-2 p-3 bg-white border border-gray-300 rounded-lg focus-within:border-black focus-within:bg-white transition-all min-h-[52px]`}>
-        {tags.map((tag, index) => (
-          <span
-            key={index}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${colors.bg} ${colors.text} rounded text-sm font-medium animate-tag-in`}
-          >
-            {tag}
-            <button
-              type="button"
-              onClick={() => removeTag(index)}
-              className={`w-4 h-4 rounded-full flex items-center justify-center ${colors.hover} transition-colors`}
+    <div className="tag-input-container" ref={containerRef}>
+      <div className="relative">
+        <div className={`flex flex-wrap gap-2 p-3 bg-white border border-gray-300 rounded-lg focus-within:border-black focus-within:bg-white transition-all min-h-[52px]`}>
+          {tags.map((tag, index) => (
+            <span
+              key={index}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${colors.bg} ${colors.text} rounded text-sm font-medium animate-tag-in`}
             >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </span>
-        ))}
-        <input
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value.replace(',', ''))}
-          onKeyDown={handleKeyDown}
-          placeholder={tags.length === 0 ? placeholder : 'Add more...'}
-          className="flex-1 min-w-[150px] bg-transparent border-0 outline-none text-gray-900 placeholder-gray-400"
-        />
+              {tag}
+              <button
+                type="button"
+                onClick={() => removeTag(index)}
+                className={`w-4 h-4 rounded-full flex items-center justify-center ${colors.hover} transition-colors`}
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </span>
+          ))}
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => {
+              setInputValue(e.target.value.replace(',', ''));
+              setShowDropdown(e.target.value.length > 0 && suggestions.length > 0);
+            }}
+            onFocus={() => { if (inputValue.length > 0 && suggestions.length > 0) setShowDropdown(true); }}
+            onKeyDown={handleKeyDown}
+            placeholder={tags.length === 0 ? placeholder : 'Add more...'}
+            className="flex-1 min-w-[150px] bg-transparent border-0 outline-none text-gray-900 placeholder-gray-400"
+          />
+        </div>
+        {showDropdown && filteredSuggestions.length > 0 && (
+          <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+            {filteredSuggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  addTag(suggestion);
+                }}
+                className="w-full text-left px-3 py-2 hover:bg-yellow-50 text-sm border-b border-gray-100 last:border-0 text-gray-700"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <p className="mt-2 text-xs text-gray-600 flex items-center gap-1">
         <span>Type an item, then press</span>
@@ -164,6 +212,7 @@ export default function MentorFormPage() {
   const [photoUrlInput, setPhotoUrlInput] = useState('');
   const [newInstitutionName, setNewInstitutionName] = useState('');
   const [institutionSuggestions, setInstitutionSuggestions] = useState<string[]>([]);
+  const [specializationSuggestions, setSpecializationSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [profileCropperOpen, setProfileCropperOpen] = useState(false);
   const [institutionCropperOpen, setInstitutionCropperOpen] = useState(false);
@@ -187,32 +236,39 @@ export default function MentorFormPage() {
   }, [router]);
 
   useEffect(() => {
-    const fetchInstitutionSuggestions = async () => {
+    const fetchSuggestions = async () => {
       try {
         const res = await fetch('/api/mentors');
         if (!res.ok) return;
 
         const mentors = await res.json();
-        const suggestions = new Set<string>();
+        const institutionSet = new Set<string>();
+        const specializationSet = new Set<string>();
 
         mentors.forEach((mentor: any) => {
           if (Array.isArray(mentor.institution_photo)) {
             mentor.institution_photo.forEach((photo: any) => {
               const institutionName = typeof photo === 'string' ? null : photo.name;
               if (institutionName && institutionName !== 'Institution') {
-                suggestions.add(institutionName);
+                institutionSet.add(institutionName);
               }
+            });
+          }
+          if (Array.isArray(mentor.specialization)) {
+            mentor.specialization.forEach((s: string) => {
+              if (s && s.trim()) specializationSet.add(s.trim());
             });
           }
         });
 
-        setInstitutionSuggestions(Array.from(suggestions).sort());
+        setInstitutionSuggestions(Array.from(institutionSet).sort());
+        setSpecializationSuggestions(Array.from(specializationSet).sort());
       } catch (error) {
-        console.warn('Failed to load institution suggestions:', error);
+        console.warn('Failed to load suggestions:', error);
       }
     };
 
-    fetchInstitutionSuggestions();
+    fetchSuggestions();
   }, []);
   
   // Countdown timer
@@ -1285,6 +1341,7 @@ export default function MentorFormPage() {
                         setTags={(tags) => setFormData(prev => ({ ...prev, specializations: tags }))}
                         placeholder="Type a specialization (e.g., Machine Learning, Data Science)"
                         accentColor="yellow"
+                        suggestions={specializationSuggestions}
                       />
                     </div>
 

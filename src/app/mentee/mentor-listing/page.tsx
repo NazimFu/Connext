@@ -1,14 +1,13 @@
 'use client';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { type Mentor } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Search, X, Loader2, Eye, Heart, Users, MessageCircle } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Search, X, Loader2, Eye, Heart, MessageCircle, ChevronDown, Check } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Tooltip,
@@ -18,6 +17,92 @@ import {
 } from '@/components/ui/tooltip';
 import { useAuth } from '@/hooks/use-auth';
 import { getGoogleDriveImageUrl } from '@/lib/utils';
+
+function FilterDropdown({
+  label,
+  options,
+  selected,
+  onToggle,
+  onClose,
+}: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  const filtered = [...options]
+    .filter(o => o.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b));
+
+  return (
+    <div
+      ref={ref}
+      className="absolute top-full left-0 mt-1 z-50 w-64 bg-white border border-gray-200 rounded-lg shadow-lg"
+    >
+      <div className="p-2 border-b border-gray-100">
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder={`Search ${label.toLowerCase()}...`}
+            className="h-7 pl-7 text-xs border-gray-200 focus:border-gray-400"
+            autoFocus
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="max-h-52 overflow-y-auto p-1">
+        {filtered.length === 0 ? (
+          <p className="text-xs text-gray-500 px-3 py-2 text-center">No results found</p>
+        ) : (
+          filtered.map(option => (
+            <button
+              key={option}
+              onClick={() => onToggle(option)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-left rounded-md hover:bg-gray-50 transition-colors text-gray-700"
+            >
+              <div className={`w-4 h-4 border rounded flex items-center justify-center shrink-0 transition-colors ${
+                selected.includes(option) ? 'bg-gray-900 border-gray-900' : 'border-gray-300 bg-white'
+              }`}>
+                {selected.includes(option) && <Check className="h-2.5 w-2.5 text-white" />}
+              </div>
+              <span className={selected.includes(option) ? 'font-medium text-gray-900' : ''}>
+                {option}
+              </span>
+            </button>
+          ))
+        )}
+      </div>
+      {selected.length > 0 && (
+        <div className="p-2 border-t border-gray-100">
+          <p className="text-xs text-gray-500 text-center">{selected.length} selected</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function MentorCard({
   mentor,
@@ -47,7 +132,6 @@ function MentorCard({
     onToggleFavorite(mentor.mentorUID);
   };
 
-  // Get available days from available_slots
   const getAvailableDays = () => {
     if (!mentor.available_slots || !Array.isArray(mentor.available_slots)) return [];
     return mentor.available_slots.map((slot: any) => slot.day).filter(Boolean);
@@ -55,7 +139,6 @@ function MentorCard({
 
   const availableDays = getAvailableDays();
 
-  // Fallback image handler
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
     e.currentTarget.src = 'https://placehold.co/40x40/e5e7eb/6b7280?text=Logo';
   };
@@ -74,7 +157,7 @@ function MentorCard({
         className="relative w-full h-full cursor-pointer"
         style={{
           transformStyle: 'preserve-3d',
-          minHeight: '380px' // slightly increased to accommodate larger avatar
+          minHeight: '380px'
         }}
         onClick={handleCardClick}
       >
@@ -92,7 +175,6 @@ function MentorCard({
           transition={{ duration: 0.6 }}
         >
           <Card className="flex flex-col h-full transition-all duration-300 hover:shadow-xl hover:scale-105 border-0 shadow-md group overflow-visible bg-white rounded-2xl">
-            {/* Heart Button */}
             <Button
               variant="ghost"
               size="icon"
@@ -108,7 +190,6 @@ function MentorCard({
               />
             </Button>
 
-            {/* Previously Requested Badge */}
             {showRequestedBadge && (
               <div className="absolute top-3 left-3 z-10">
                 <Badge className="bg-blue-100 text-blue-700 border-0 text-xs font-medium">
@@ -118,11 +199,7 @@ function MentorCard({
             )}
 
             <CardHeader className="items-center text-center pb-4 bg-gradient-to-b from-gray-50 to-white">
-              {/* ────────────────────────────────────────────────
-                  Redesigned: Mentor Photo + Institutions Section
-              ──────────────────────────────────────────────── */}
               <div className="flex flex-col items-center gap-5 mb-4 w-full">
-                {/* Mentor Avatar – dominant focal point at the top */}
                 <div className="relative">
                   <div className="absolute inset-0 bg-gradient-to-br from-yellow-400/15 to-amber-500/15 rounded-full blur-xl opacity-70" />
                   <Avatar className="h-24 w-24 ring-3 ring-yellow-100 ring-offset-2 ring-offset-white transition-all duration-300 hover:ring-yellow-300 hover:scale-105 relative cursor-pointer shadow-md">
@@ -133,13 +210,11 @@ function MentorCard({
                   </Avatar>
                 </div>
 
-                {/* Mentor Name – below avatar */}
                 <CardTitle className="font-headline text-lg font-bold text-gray-900 group-hover:text-yellow-700 transition-colors duration-200">
                   {mentor.mentor_name}
                 </CardTitle>
               </div>
 
-              {/* Specialization badges */}
               <div className="flex flex-wrap justify-center gap-2 mt-3">
                 {Array.isArray(mentor.specialization) ? (
                   <>
@@ -190,7 +265,6 @@ function MentorCard({
             </CardContent>
 
             <CardFooter className="pt-3 pb-3 flex-col gap-2 border-t border-gray-100">
-              {/* Institutions at bottom of card */}
               {mentor.institution_photo && Array.isArray(mentor.institution_photo) && mentor.institution_photo.length > 0 && (
                 <div className="flex items-center justify-center gap-2.5 max-w-[260px] flex-wrap">
                   {mentor.institution_photo.slice(0, 3).map((photo, idx) => {
@@ -225,8 +299,8 @@ function MentorCard({
                             +{mentor.institution_photo.length - 3}
                           </div>
                         </TooltipTrigger>
-                        <TooltipContent 
-                          side="top" 
+                        <TooltipContent
+                          side="top"
                           align="center"
                           sideOffset={8}
                           className="bg-white border-gray-200 shadow-xl p-3 rounded-lg z-[9999] overflow-visible"
@@ -237,7 +311,7 @@ function MentorCard({
                             {mentor.institution_photo.slice(3).map((photo, i) => {
                               const photoObj = typeof photo === 'string' ? { url: photo, name: 'Institution' } : photo;
                               return (
-                                <div 
+                                <div
                                   key={`tooltip-${i}`}
                                   className="w-11 h-11 bg-white rounded border border-gray-200 p-1.5 flex items-center justify-center cursor-pointer hover:border-yellow-300 transition-colors relative"
                                   onMouseEnter={(e) => {
@@ -273,7 +347,7 @@ function MentorCard({
           </Card>
         </motion.div>
 
-        {/* Back of card – unchanged */}
+        {/* Back of card */}
         <motion.div
           className="absolute w-full h-full"
           style={{
@@ -363,10 +437,6 @@ function MentorCard({
   );
 }
 
-// ────────────────────────────────────────────────
-// The rest of the component (MentorsPage) remains unchanged
-// ────────────────────────────────────────────────
-
 export default function MentorsPage() {
   const { user } = useAuth();
   const [mentors, setMentors] = useState<Mentor[]>([]);
@@ -382,7 +452,7 @@ export default function MentorsPage() {
   const [requestedMentors, setRequestedMentors] = useState<string[]>([]);
   const [showFavorites, setShowFavorites] = useState(false);
   const [showRequested, setShowRequested] = useState(false);
-  const [activeFilterTab, setActiveFilterTab] = useState<'specialization' | 'availability' | 'institution'>('specialization');
+  const [openFilterPopup, setOpenFilterPopup] = useState<'specialization' | 'availability' | 'institution' | null>(null);
 
   useEffect(() => {
     const fetchMentors = async () => {
@@ -409,7 +479,6 @@ export default function MentorsPage() {
             });
           }
 
-          // Extract institution names
           if (mentor.institution_photo && Array.isArray(mentor.institution_photo)) {
             mentor.institution_photo.forEach((photo) => {
               if (typeof photo === 'object' && photo.name) {
@@ -567,7 +636,7 @@ export default function MentorsPage() {
             transition={{ duration: 0.5 }}
             className="p-6"
           >
-            {/* Search and Filters – unchanged */}
+            {/* Search and Filters */}
             <div className="bg-white rounded-xl border border-gray-400 shadow-sm p-6 mb-8">
               <div className="flex flex-col md:flex-row gap-4 mb-4">
                 <div className="relative flex-1">
@@ -591,178 +660,143 @@ export default function MentorsPage() {
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2 pb-3 border-b border-gray-300">
+              <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-2 flex-wrap">
+                <span className="text-sm font-semibold text-gray-900 shrink-0">Filter By:</span>
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
-                    variant={showFavorites ? "default" : "outline"}
+                    variant="outline"
                     size="sm"
                     onClick={() => {
                       setShowFavorites(!showFavorites);
                       setShowRequested(false);
                     }}
-                    className={`text-xs ${
+                    className={`h-8 text-xs min-w-[115px] transition-colors ${
                       showFavorites
-                        ? 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white'
-                        : 'border-gray-400 text-gray-700 hover:bg-gray-100'
+                        ? 'border-yellow-500 bg-yellow-50 text-yellow-800'
+                        : 'border-yellow-300 text-yellow-700 hover:bg-yellow-50'
                     }`}
                   >
-                    <Heart className={`h-3 w-3 mr-1.5 ${showFavorites ? 'fill-white' : ''}`} />
+                    <Heart className={`h-3 w-3 mr-1.5 transition-all ${showFavorites ? 'fill-yellow-700 text-yellow-700' : ''}`} />
                     Favorites {favoriteMentors.length > 0 && `(${favoriteMentors.length})`}
                   </Button>
                   <Button
-                    variant={showRequested ? "default" : "outline"}
+                    variant="outline"
                     size="sm"
                     onClick={() => {
                       setShowRequested(!showRequested);
                       setShowFavorites(false);
                     }}
-                    className={`text-xs ${
+                    className={`h-8 text-xs min-w-[115px] transition-colors ${
                       showRequested
-                        ? 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white'
-                        : 'border-gray-400 text-gray-700 hover:bg-gray-100'
+                        ? 'border-yellow-500 bg-yellow-50 text-yellow-800'
+                        : 'border-yellow-300 text-yellow-700 hover:bg-yellow-50'
                     }`}
                   >
+                    <MessageCircle className={`h-3 w-3 mr-1.5 transition-all ${showRequested ? 'fill-yellow-700 text-yellow-700' : ''}`} />
                     Previously Requested {requestedMentors.length > 0 && `(${requestedMentors.length})`}
                   </Button>
-                </div>
-
-                <div className="pt-1">
-                  <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-2 mb-3">
-                    <span className="text-sm font-semibold text-gray-900 shrink-0">Filter By:</span>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={activeFilterTab === 'institution' ? 'default' : 'outline'}
-                        onClick={() => setActiveFilterTab('institution')}
-                        className={activeFilterTab === 'institution' ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white h-8' : 'h-8 border-purple-300 text-purple-700 hover:bg-purple-50'}
-                      >
-                        Institution
-                        {selectedInstitutions.length > 0 && (
-                          <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-semibold">
-                            {selectedInstitutions.length}
-                          </span>
-                        )}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={activeFilterTab === 'specialization' ? 'default' : 'outline'}
-                        onClick={() => setActiveFilterTab('specialization')}
-                        className={activeFilterTab === 'specialization' ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white h-8' : 'h-8 border-blue-300 text-blue-700 hover:bg-blue-50'}
-                      >
-                        Specialization
-                        {selectedFilters.length > 0 && (
-                          <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-semibold">
-                            {selectedFilters.length}
-                          </span>
-                        )}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={activeFilterTab === 'availability' ? 'default' : 'outline'}
-                        onClick={() => setActiveFilterTab('availability')}
-                        className={activeFilterTab === 'availability' ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white h-8' : 'h-8 border-green-300 text-green-700 hover:bg-green-50'}
-                      >
-                        Availability
-                        {selectedDays.length > 0 && (
-                          <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-semibold">
-                            {selectedDays.length}
-                          </span>
-                        )}
-                      </Button>
-                    </div>
-                    {(selectedFilters.length > 0 || selectedDays.length > 0 || selectedInstitutions.length > 0 || searchQuery || showFavorites || showRequested) && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={clearAllFilters}
-                        className="md:ml-auto text-xs text-gray-700 hover:text-gray-800 hover:bg-gray-100 h-7"
-                      >
-                        Clear All
-                      </Button>
+                  <div className="h-5 w-px bg-yellow-200 mx-1" />
+                  <div className="relative">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setOpenFilterPopup(openFilterPopup === 'institution' ? null : 'institution')}
+                      className={`h-8 min-w-[115px] transition-colors ${
+                        (openFilterPopup === 'institution' || selectedInstitutions.length > 0)
+                          ? 'border-yellow-500 bg-yellow-50 text-yellow-800'
+                          : 'border-yellow-300 text-yellow-700 hover:bg-yellow-50'
+                      }`}
+                    >
+                      Institution
+                      {selectedInstitutions.length > 0 && (
+                        <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-yellow-600 text-white px-1.5 text-[11px] font-semibold">
+                          {selectedInstitutions.length}
+                        </span>
+                      )}
+                      <ChevronDown className={`ml-1 h-3 w-3 transition-transform ${openFilterPopup === 'institution' ? 'rotate-180' : ''}`} />
+                    </Button>
+                    {openFilterPopup === 'institution' && (
+                      <FilterDropdown
+                        label="Institution"
+                        options={availableInstitutions}
+                        selected={selectedInstitutions}
+                        onToggle={toggleInstitution}
+                        onClose={() => setOpenFilterPopup(null)}
+                      />
                     )}
                   </div>
-
-                  {activeFilterTab === 'specialization' && (
-                    <div>
-                      <div className="flex flex-wrap gap-2">
-                        {availableFilters.map((filter) => (
-                          <Badge
-                            key={filter}
-                            onClick={() => toggleFilter(filter)}
-                            className={`cursor-pointer transition-all text-xs ${
-                              selectedFilters.includes(filter)
-                                ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700'
-                                : 'bg-gray-100 text-gray-800 border-gray-300 hover:bg-gray-200'
-                            }`}
-                          >
-                            {filter}
-                            {selectedFilters.includes(filter) && <X className="ml-1 h-3 w-3" />}
-                          </Badge>
-                        ))}
-                      </div>
+                  <div className="relative">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setOpenFilterPopup(openFilterPopup === 'specialization' ? null : 'specialization')}
+                      className={`h-8 min-w-[115px] transition-colors ${
+                        (openFilterPopup === 'specialization' || selectedFilters.length > 0)
+                          ? 'border-yellow-500 bg-yellow-50 text-yellow-800'
+                          : 'border-yellow-300 text-yellow-700 hover:bg-yellow-50'
+                      }`}
+                    >
+                      Specialization
                       {selectedFilters.length > 0 && (
-                        <div className="mt-3 text-xs text-gray-600">
-                          Showing mentors with: <span className="font-semibold text-gray-700">{selectedFilters.join(', ')}</span>
-                        </div>
+                        <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-yellow-600 text-white px-1.5 text-[11px] font-semibold">
+                          {selectedFilters.length}
+                        </span>
                       )}
-                    </div>
-                  )}
-
-                  {activeFilterTab === 'availability' && (
-                    <div>
-                      <div className="flex flex-wrap gap-2">
-                        {availableDays.map((day) => (
-                          <Badge
-                            key={day}
-                            onClick={() => toggleDay(day)}
-                            className={`cursor-pointer transition-all text-xs ${
-                              selectedDays.includes(day)
-                                ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700'
-                                : 'bg-green-50 text-green-800 border-green-300 hover:bg-green-100'
-                            }`}
-                          >
-                            {day}
-                            {selectedDays.includes(day) && <X className="ml-1 h-3 w-3" />}
-                          </Badge>
-                        ))}
-                      </div>
+                      <ChevronDown className={`ml-1 h-3 w-3 transition-transform ${openFilterPopup === 'specialization' ? 'rotate-180' : ''}`} />
+                    </Button>
+                    {openFilterPopup === 'specialization' && (
+                      <FilterDropdown
+                        label="Specialization"
+                        options={availableFilters}
+                        selected={selectedFilters}
+                        onToggle={toggleFilter}
+                        onClose={() => setOpenFilterPopup(null)}
+                      />
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setOpenFilterPopup(openFilterPopup === 'availability' ? null : 'availability')}
+                      className={`h-8 min-w-[115px] transition-colors ${
+                        (openFilterPopup === 'availability' || selectedDays.length > 0)
+                          ? 'border-yellow-500 bg-yellow-50 text-yellow-800'
+                          : 'border-yellow-300 text-yellow-700 hover:bg-yellow-50'
+                      }`}
+                    >
+                      Availability
                       {selectedDays.length > 0 && (
-                        <div className="mt-3 text-xs text-gray-600">
-                          Available on: <span className="font-semibold text-gray-700">{selectedDays.join(', ')}</span>
-                        </div>
+                        <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-yellow-600 text-white px-1.5 text-[11px] font-semibold">
+                          {selectedDays.length}
+                        </span>
                       )}
-                    </div>
-                  )}
-
-                  {activeFilterTab === 'institution' && (
-                    <div>
-                      <div className="flex flex-wrap gap-2">
-                        {availableInstitutions.map((institution) => (
-                          <Badge
-                            key={institution}
-                            onClick={() => toggleInstitution(institution)}
-                            className={`cursor-pointer transition-all text-xs ${
-                              selectedInstitutions.includes(institution)
-                                ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white hover:from-purple-600 hover:to-purple-700'
-                                : 'bg-purple-50 text-purple-800 border-purple-300 hover:bg-purple-100'
-                            }`}
-                          >
-                            {institution}
-                            {selectedInstitutions.includes(institution) && <X className="ml-1 h-3 w-3" />}
-                          </Badge>
-                        ))}
-                      </div>
-                      {selectedInstitutions.length > 0 && (
-                        <div className="mt-3 text-xs text-gray-600">
-                          From institutions: <span className="font-semibold text-gray-700">{selectedInstitutions.join(', ')}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                      <ChevronDown className={`ml-1 h-3 w-3 transition-transform ${openFilterPopup === 'availability' ? 'rotate-180' : ''}`} />
+                    </Button>
+                    {openFilterPopup === 'availability' && (
+                      <FilterDropdown
+                        label="Availability"
+                        options={availableDays}
+                        selected={selectedDays}
+                        onToggle={toggleDay}
+                        onClose={() => setOpenFilterPopup(null)}
+                      />
+                    )}
+                  </div>
                 </div>
+                {(selectedFilters.length > 0 || selectedDays.length > 0 || selectedInstitutions.length > 0 || searchQuery || showFavorites || showRequested) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearAllFilters}
+                    className="md:ml-auto text-xs text-gray-700 hover:text-gray-900 hover:bg-gray-100 h-7"
+                  >
+                    Clear All
+                  </Button>
+                )}
               </div>
             </div>
 
