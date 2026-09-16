@@ -10,10 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Shield, Loader2, ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
 
-// Same value as DEVELOPER_PASSWORD in src/app/internal/dashboard/page.tsx and
-// ADMIN_API_SECRET in .env — keep all three in sync if you change it.
-const ADMIN_PASSWORD = "LuminiDev2024!";
-
 interface MeetingDetail {
   meetingId: string;
   role: "mentor" | "mentee";
@@ -92,6 +88,7 @@ export default function AccountDetailPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [authChecking, setAuthChecking] = useState(false);
 
   const [account, setAccount] = useState<AccountDetail | null>(null);
   const [meetings, setMeetings] = useState<MeetingDetail[]>([]);
@@ -103,12 +100,24 @@ export default function AccountDetailPage() {
   const [dateTo, setDateTo] = useState("");
   const [meetingSort, setMeetingSort] = useState<MeetingSort>("newest");
 
-  const handleLogin = () => {
-    if (password === ADMIN_PASSWORD) {
-      setIsAuthenticated(true);
-      setAuthError("");
-    } else {
-      setAuthError("Invalid password.");
+  const handleLogin = async () => {
+    setAuthChecking(true);
+    setAuthError("");
+    try {
+      const res = await fetch("/api/internal/verify-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (res.ok) {
+        setIsAuthenticated(true);
+      } else {
+        setAuthError("Invalid password.");
+      }
+    } catch {
+      setAuthError("Failed to verify password. Please try again.");
+    } finally {
+      setAuthChecking(false);
     }
   };
 
@@ -187,13 +196,13 @@ export default function AccountDetailPage() {
                 value={password}
                 className="mt-1.5"
                 onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                onKeyDown={(e) => e.key === "Enter" && !authChecking && handleLogin()}
                 placeholder="Enter admin password"
               />
             </div>
             {authError && <p className="text-sm text-red-600">{authError}</p>}
-            <Button onClick={handleLogin} className="w-full bg-gray-900 hover:bg-gray-800 text-white">
-              Access
+            <Button onClick={handleLogin} disabled={authChecking} className="w-full bg-gray-900 hover:bg-gray-800 text-white">
+              {authChecking ? "Checking..." : "Access"}
             </Button>
           </div>
         </div>

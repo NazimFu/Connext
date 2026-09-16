@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
+import { isAuthorizedAdmin } from '@/lib/server/admin-auth';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!isAuthorizedAdmin(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     // Fetch all mentee applications (excluding abandoned/incomplete temp_signup records)
     const menteeContainer = database.container('mentee');

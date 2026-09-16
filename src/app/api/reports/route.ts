@@ -2,13 +2,14 @@
 // CHANGED: When a mentor_report is resolved (approved), set accountFrozen=true on the mentee.
 //          When a mentor_report is rejected OR reopened (status→pending), clear accountFrozen.
 
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { PatchOperation } from '@azure/cosmos';
 import type { Mentor, Mentee, Scheduling } from '@/lib/types';
 import { locateMeeting, findScheduleIndex } from '@/lib/server/meeting-utils';
 import { sendEmail } from '@/lib/email';
 import { clampToken, getMeetingDateTime } from '@/lib/token-cycle';
+import { isAuthorizedAdmin } from '@/lib/server/admin-auth';
 
 const MY_TIMEZONE = 'Asia/Kuala_Lumpur';
 
@@ -72,7 +73,11 @@ const gatherReportedMeetingIds = async (): Promise<string[]> => {
   return Array.from(ids);
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!isAuthorizedAdmin(req)) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const meetingIds = await gatherReportedMeetingIds();
     const reports: ReportSummary[] = [];
@@ -389,7 +394,11 @@ async function cancelMentorsHostedUpcomingMeetings(mentorDoc: any, cancelledAt: 
   }
 }
 
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
+  if (!isAuthorizedAdmin(request)) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const { meetingId, reportType, status, reviewerName, reviewNotes, actionReason, liftBan } =
       await request.json();

@@ -31,8 +31,6 @@ import {
   RefreshCw, KeyRound, Activity, Zap,
 } from "lucide-react";
 
-const DEVELOPER_PASSWORD = "LuminiDev2024!";
-
 /* ─────────────────────────────── TYPES ─────────────────────────────── */
 interface MenteeApplication {
   id: string; menteeUID: string; name: string; mentee_name: string;
@@ -172,6 +170,7 @@ export default function InternalDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [authChecking, setAuthChecking] = useState(false);
 
   // Applications
   const [menteeApplications, setMenteeApplications] = useState<MenteeApplication[]>([]);
@@ -229,20 +228,42 @@ export default function InternalDashboard() {
   const [replenishing, setReplenishing] = useState(false);
   const [replenishError, setReplenishError] = useState("");
 
-  /* ── auth ── */
-  const handleLogin = () => {
-    if (password === DEVELOPER_PASSWORD) { setIsAuthenticated(true); setAuthError(""); }
-    else setAuthError("Invalid password.");
+  /* ── auth ──
+     The real secret lives server-side (ADMIN_API_SECRET) — this just asks
+     the server whether the typed password matches. On success, the same
+     typed password is what gets sent as the Bearer token on every other
+     admin fetch below (no separate session). */
+  const handleLogin = async () => {
+    setAuthChecking(true);
+    setAuthError("");
+    try {
+      const res = await fetch("/api/internal/verify-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (res.ok) {
+        setIsAuthenticated(true);
+      } else {
+        setAuthError("Invalid password.");
+      }
+    } catch {
+      setAuthError("Failed to verify password. Please try again.");
+    } finally {
+      setAuthChecking(false);
+    }
   };
 
   /* ── fetch ── */
+  const authHeaders = useMemo(() => ({ Authorization: `Bearer ${password}` }), [password]);
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
       const [apps, rpts, cnls] = await Promise.all([
-        fetch("/api/internal/applications").then(r => r.json()),
-        fetch("/api/reports").then(r => r.json()),
-        fetch("/api/meetings/cancel").then(r => r.json()),
+        fetch("/api/internal/applications", { headers: authHeaders }).then(r => r.json()),
+        fetch("/api/reports", { headers: authHeaders }).then(r => r.json()),
+        fetch("/api/meetings/cancel", { headers: authHeaders }).then(r => r.json()),
       ]);
       setMenteeApplications(apps.mentees ?? []);
       setMentorApplications(apps.mentors ?? []);
@@ -250,16 +271,16 @@ export default function InternalDashboard() {
       setCancellations(cnls ?? []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, []);
+  }, [authHeaders]);
 
   const fetchTokenStatus = useCallback(async () => {
     setTokenLoading(true);
     try {
-      const data = await fetch("/api/admin/google-auth").then(r => r.json());
+      const data = await fetch("/api/admin/google-auth", { headers: authHeaders }).then(r => r.json());
       setTokenStatus(data);
     } catch { setTokenFlash({ type: "error", text: "Failed to fetch token status." }); }
     finally { setTokenLoading(false); }
-  }, []);
+  }, [authHeaders]);
 
   /* ── token accounts (mentor/mentee) ── */
   const fetchTokenAccounts = useCallback(async (role: "mentor" | "mentee") => {
@@ -323,7 +344,7 @@ export default function InternalDashboard() {
     if (!reviewDialog.app || !reviewerName.trim()) return;
     try {
       await fetch("/api/internal/review", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
           applicationId: reviewDialog.app.id,
           applicationType: reviewDialog.type,
@@ -350,7 +371,7 @@ export default function InternalDashboard() {
     setReportUpdating(true);
     try {
       const res = await fetch("/api/reports", {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify(
           reportDialog.action === "lift_ban"
             ? {
@@ -377,7 +398,7 @@ export default function InternalDashboard() {
       setReportReviewer(""); setReportNotes("");
       setReportActionReason("Inappropriate behavior");
       setReportActionReasonCustom("");
-      const data = await fetch("/api/reports").then(r => r.json());
+      const data = await fetch("/api/reports", { headers: authHeaders }).then(r => r.json());
       setReports(data ?? []);
     } catch (error) { alert(error instanceof Error ? error.message : "Error updating report."); }
     finally { setReportUpdating(false); }
@@ -389,7 +410,7 @@ export default function InternalDashboard() {
     setCancelUpdating(true);
     try {
       await fetch("/api/meetings/cancel", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
           meetingId: cancelDialog.item.meetingId,
           action: cancelDialog.action,
@@ -399,7 +420,7 @@ export default function InternalDashboard() {
       });
       setCancelDialog({ open: false, item: null, action: "approve" });
       setCancelReviewer(""); setCancelNotes("");
-      const data = await fetch("/api/meetings/cancel").then(r => r.json());
+      const data = await fetch("/api/meetings/cancel", { headers: authHeaders }).then(r => r.json());
       setCancellations(data ?? []);
     } catch { alert("Error reviewing cancellation."); }
     finally { setCancelUpdating(false); }
@@ -445,13 +466,13 @@ export default function InternalDashboard() {
               <Input
                 type="password" value={password} className="mt-1.5"
                 onChange={e => setPassword(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleLogin()}
+                onKeyDown={e => e.key === "Enter" && !authChecking && handleLogin()}
                 placeholder="Enter admin password"
               />
             </div>
             {authError && <p className="text-sm text-red-600">{authError}</p>}
-            <Button onClick={handleLogin} className="w-full bg-gray-900 hover:bg-gray-800 text-white">
-              Access Dashboard
+            <Button onClick={handleLogin} disabled={authChecking} className="w-full bg-gray-900 hover:bg-gray-800 text-white">
+              {authChecking ? "Checking..." : "Access Dashboard"}
             </Button>
           </div>
         </div>

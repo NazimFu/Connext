@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import nodemailer from 'nodemailer';
+import { isAuthorizedAdmin } from '@/lib/server/admin-auth';
 
 export async function POST(request: NextRequest) {
+  if (!isAuthorizedAdmin(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const { applicationId, applicationType, decision, notes, reviewerName } = await request.json();
 

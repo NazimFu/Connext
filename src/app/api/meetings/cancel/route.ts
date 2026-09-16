@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { database } from '@/lib/cosmos';
 import { clampToken } from '@/lib/token-cycle';
+import { isAuthorizedAdmin } from '@/lib/server/admin-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +9,11 @@ export const dynamic = 'force-dynamic';
 // ============================================================================
 // GET – Fetch all cancellations (pending, approved, rejected, and auto-replenished)
 // ============================================================================
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!isAuthorizedAdmin(req)) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const mentorContainer = database.container('mentor');
 
@@ -75,6 +80,10 @@ export async function GET() {
 // POST – Approve or Reject Cancellation
 // ============================================================================
 export async function POST(req: NextRequest) {
+  if (!isAuthorizedAdmin(req)) {
+    return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const { meetingId, action, reviewerName, reviewNotes } = await req.json();
 

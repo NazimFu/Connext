@@ -1,5 +1,6 @@
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
+import { getStorage } from 'firebase-admin/storage';
 
 export function getFirebaseAdminApp() {
   if (getApps().length > 0) {
@@ -16,6 +17,10 @@ export function getFirebaseAdminApp() {
     }),
     storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!,
   });
+}
+
+export function getAdminStorageBucket() {
+  return getStorage(getFirebaseAdminApp()).bucket();
 }
 
 export async function updateFirebaseAuthEmail(uid: string, email: string) {

@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test:smoke": "node scripts/smoke/scheduling.smoke.mjs",
     "setup:cosmos": "ts-node scripts/setup-cosmos-containers.ts",
-    "get-google-token": "node scripts/get-google-refresh-token.js"
+    "get-google-token": "node scripts/get-google-refresh-token.js",
+    "sync:logos": "node scripts/sync-mentor-logos.mjs"
   },
   "dependencies": {
     "@azure/cosmos": "^4.0.0",

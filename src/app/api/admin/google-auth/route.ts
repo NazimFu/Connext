@@ -10,8 +10,13 @@ import {
   deleteTokens,
   buildAuthorizationUrl,
 } from '@/lib/google-token-manager';
+import { isAuthorizedAdmin } from '@/lib/server/admin-auth';
 
 export async function GET(request: NextRequest) {
+  if (!isAuthorizedAdmin(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const tokens = await readTokens();
     const authUrl = buildAuthorizationUrl();
@@ -48,6 +53,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  if (!isAuthorizedAdmin(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     await deleteTokens();
     return NextResponse.json({

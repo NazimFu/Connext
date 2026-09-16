@@ -70,6 +70,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [curatedLogos, setCuratedLogos] = useState<InstitutionLogo[]>([]);
+  const [logosReady, setLogosReady] = useState(false);
   const [mentorPage, setMentorPage] = useState(0);
   const [floatingNav, setFloatingNav] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -104,9 +105,50 @@ export default function Home() {
   useEffect(() => {
     fetch('/api/mentor-logos')
       .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data.logos)) setCuratedLogos(data.logos); })
-      .catch(() => {});
+      .then((data) => {
+        if (Array.isArray(data.logos) && data.logos.length > 0) {
+          setCuratedLogos(data.logos);
+        } else {
+          // Nothing to preload — show the fallback text pills right away.
+          setLogosReady(true);
+        }
+      })
+      .catch(() => setLogosReady(true));
   }, []);
+
+  // Preload every real logo image before revealing the strip, so visitors
+  // never see it pop in piece-by-piece. A broken/slow image can't block this
+  // forever: each one resolves on error too, and a timeout covers a stalled fetch.
+  useEffect(() => {
+    if (curatedLogos.length === 0) return;
+
+    let cancelled = false;
+    const timeoutId = setTimeout(() => {
+      if (!cancelled) setLogosReady(true);
+    }, 2500);
+
+    Promise.all(
+      curatedLogos.map(
+        (logo) =>
+          new Promise<void>((resolve) => {
+            const img = new window.Image();
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            img.src = logo.url;
+          })
+      )
+    ).then(() => {
+      if (!cancelled) {
+        clearTimeout(timeoutId);
+        setLogosReady(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [curatedLogos]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -457,13 +499,17 @@ export default function Home() {
 
         /* ══════════════════════════════════════════════════
            INSTITUTION LOGOS — vibrant rectangle cards
-           Visible immediately (no fade-in on load),
-           animated marquee strip
+           Hidden until logosReady (all logo images preloaded,
+           or nothing to preload) — then fades up once, so
+           visitors never see it pop in piece-by-piece.
         ══════════════════════════════════════════════════ */
         .institutions-strip {
           width: 100%;
           padding: 24px 0 0;
-          animation: fadeUp 0.55s 0.32s ease both;
+          opacity: 0;
+        }
+        .institutions-strip.is-ready {
+          animation: fadeUp 0.55s ease both;
         }
         .institutions-label {
           display: flex; align-items: center; gap: 14px;
@@ -953,7 +999,7 @@ export default function Home() {
                 INSTITUTION LOGOS — vibrant rectangle cards
                 Immediately visible, continuous marquee
             ══════════════════════════════════════════════ */}
-            <div className="institutions-strip">
+            <div className={`institutions-strip ${logosReady ? 'is-ready' : ''}`}>
               <div className="institutions-label">
                 <div className="institutions-label-line" />
                 <span className="institutions-label-text">Mentors from leading institutions/companies</span>
