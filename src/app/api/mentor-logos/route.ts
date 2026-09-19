@@ -14,9 +14,10 @@ type Logo = { url: string; name: string };
 const toDisplayName = (filename: string) => filename.slice(0, filename.length - path.extname(filename).length);
 
 /**
- * Live source: logos synced from Google Drive into Firebase Storage by
- * scripts/sync-mentor-logos.mjs (npm run sync:logos) — no redeploy needed to
- * pick up a new/changed logo, since this reads Storage at request time.
+ * Live source: logos uploaded directly to Firebase Storage (under
+ * mentor-logos/), e.g. via the Firebase Console's Storage browser — no
+ * redeploy needed to pick up a new/changed logo, since this reads Storage
+ * at request time.
  */
 async function listStorageLogos(): Promise<Logo[]> {
   const bucket = getAdminStorageBucket();

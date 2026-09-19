@@ -70,6 +70,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [curatedLogos, setCuratedLogos] = useState<InstitutionLogo[]>([]);
+  const [loadableLogos, setLoadableLogos] = useState<InstitutionLogo[]>([]);
   const [logosReady, setLogosReady] = useState(false);
   const [mentorPage, setMentorPage] = useState(0);
   const [floatingNav, setFloatingNav] = useState(false);
@@ -117,35 +118,45 @@ export default function Home() {
   }, []);
 
   // Preload every real logo image before revealing the strip, so visitors
-  // never see it pop in piece-by-piece. A broken/slow image can't block this
-  // forever: each one resolves on error too, and a timeout covers a stalled fetch.
+  // never see it pop in piece-by-piece. Any logo that fails to load (e.g. a
+  // file just uploaded to Storage that isn't public yet) is silently dropped
+  // from the list rather than shown as a broken image or text fallback — it
+  // simply reappears once it loads successfully on a later page view. A
+  // stalled fetch can't block this forever: a timeout finishes with whatever
+  // has loaded so far, treating anything still pending as not-yet-loadable.
   useEffect(() => {
     if (curatedLogos.length === 0) return;
 
-    let cancelled = false;
-    const timeoutId = setTimeout(() => {
-      if (!cancelled) setLogosReady(true);
-    }, 2500);
+    let done = false;
+    const settled: (InstitutionLogo | null)[] = new Array(curatedLogos.length).fill(null);
+    let pending = curatedLogos.length;
 
-    Promise.all(
-      curatedLogos.map(
-        (logo) =>
-          new Promise<void>((resolve) => {
-            const img = new window.Image();
-            img.onload = () => resolve();
-            img.onerror = () => resolve();
-            img.src = logo.url;
-          })
-      )
-    ).then(() => {
-      if (!cancelled) {
-        clearTimeout(timeoutId);
-        setLogosReady(true);
-      }
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timeoutId);
+      setLoadableLogos(settled.filter((logo): logo is InstitutionLogo => logo !== null));
+      setLogosReady(true);
+    };
+
+    const timeoutId = setTimeout(finish, 2500);
+
+    curatedLogos.forEach((logo, i) => {
+      const img = new window.Image();
+      img.onload = () => {
+        settled[i] = logo;
+        pending -= 1;
+        if (pending === 0) finish();
+      };
+      img.onerror = () => {
+        pending -= 1;
+        if (pending === 0) finish();
+      };
+      img.src = logo.url;
     });
 
     return () => {
-      cancelled = true;
+      done = true;
       clearTimeout(timeoutId);
     };
   }, [curatedLogos]);
@@ -199,11 +210,14 @@ export default function Home() {
   const visibleMentors = featuredMentors.slice(mentorPage * mentorsPerPage, mentorPage * mentorsPerPage + mentorsPerPage);
   const getInitials = (name: string) => name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
 
-  // Logos are whatever image files currently sit in public/Mentor Logos/, discovered
-  // via /api/mentor-logos — falls back to text pills if that folder is empty.
-  const hasRealLogos = curatedLogos.length > 0;
+  // Logos come from /api/mentor-logos (Firebase Storage, falling back to
+  // public/Mentor Logos/) — but only ones that actually loaded (see the
+  // preload effect above) ever reach this list, so a not-yet-public upload
+  // never shows a broken image or fallback text, it just isn't in here yet.
+  // Falls back to text pills only when there are zero loadable real logos.
+  const hasRealLogos = loadableLogos.length > 0;
   const marqueeLogos = hasRealLogos
-    ? [...curatedLogos, ...curatedLogos, ...curatedLogos]
+    ? [...loadableLogos, ...loadableLogos, ...loadableLogos]
     : [...FALLBACK_INSTITUTIONS, ...FALLBACK_INSTITUTIONS, ...FALLBACK_INSTITUTIONS];
 
   return (
@@ -1017,20 +1031,13 @@ export default function Home() {
                             alt={logo.name}
                             loading="eager"
                             onError={(e) => {
-                              // Graceful fallback: hide broken img, show institution name
+                              // Shouldn't normally fire — only logos already
+                              // confirmed loadable (see the preload effect)
+                              // get rendered. As a safety net for something
+                              // going away between preload and render: just
+                              // hide the card, no text fallback.
                               const card = e.currentTarget.closest('.inst-logo-card') as HTMLElement;
-                              if (card) {
-                                e.currentTarget.style.display = 'none';
-                                const existing = card.querySelector('.inst-abbr');
-                                if (!existing) {
-                                  const abbr = document.createElement('span');
-                                  abbr.className = 'inst-abbr';
-                                  abbr.textContent = logo.name.length > 10
-                                    ? logo.name.slice(0, 4).toUpperCase()
-                                    : logo.name;
-                                  card.appendChild(abbr);
-                                }
-                              }
+                              if (card) card.style.display = 'none';
                             }}
                           />
                         </div>
