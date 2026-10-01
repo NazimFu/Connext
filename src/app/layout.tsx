@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { AuthProvider } from '@/hooks/use-auth';
+import { TutorialProvider } from '@/hooks/use-tutorial';
+import { TutorialOverlay } from '@/components/tutorial/tutorial-overlay';
 import AppLayout from '@/components/AppLayout';
 
 export const metadata: Metadata = {
@@ -93,10 +95,13 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <AuthProvider>
-          <AppLayout >
-            {children}
-          </AppLayout>
-          <Toaster />
+          <TutorialProvider>
+            <AppLayout >
+              {children}
+            </AppLayout>
+            <TutorialOverlay />
+            <Toaster />
+          </TutorialProvider>
         </AuthProvider>
       </body>
     </html>

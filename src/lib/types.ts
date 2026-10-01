@@ -115,6 +115,7 @@ export type User = {
   allowCVShare?: boolean;
   timezone?: string;
   accountFrozen?: boolean;
+  hasSeenTutorial?: boolean;
 };
 
 export type Mentee = {
@@ -129,6 +130,7 @@ export type Mentee = {
   mentee_institution: string;
   timezone?: string;
   accountFrozen?: boolean;
+  hasSeenTutorial?: boolean;
   role: string;
   verified: boolean;
   verificationStatus: 'not-submitted' | 'pending' | 'just-approved' | 'approved' | 'rejected';
@@ -176,6 +178,7 @@ export type Mentor = {
   achievement: string[] | string;
   timezone?: string;
   accountFrozen?: boolean;
+  hasSeenTutorial?: boolean;
   verified: boolean;
   verificationStatus: 'not-submitted' | 'pending' | 'just-approved' | 'approved' | 'rejected';
   tokens: number;

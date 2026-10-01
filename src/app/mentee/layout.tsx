@@ -92,6 +92,14 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
     return () => document.removeEventListener('keydown', fn);
   }, []);
 
+  // Opened programmatically by the tutorial when it needs to spotlight
+  // something inside the sidebar (e.g. the token counter).
+  useEffect(() => {
+    const openSidebar = () => setSidebarOpen(true);
+    window.addEventListener('tutorial:open-sidebar', openSidebar);
+    return () => window.removeEventListener('tutorial:open-sidebar', openSidebar);
+  }, []);
+
   const shouldHideSidebar = pagesWithoutSidebar.some(p => pathname.startsWith(p));
 
   const handleLogout = async () => {
@@ -214,7 +222,7 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
               </div>
 
               <div className="relative group">
-                <div className="flex flex-col items-center justify-center bg-gradient-to-br from-gray-100 via-yellow-50 to-amber-100 rounded-xl px-4 py-2 shadow text-gray-900 border border-yellow-200 hover:border-yellow-400 transition-all duration-200 cursor-pointer">
+                <div data-tutorial="token-info" className="flex flex-col items-center justify-center bg-gradient-to-br from-gray-100 via-yellow-50 to-amber-100 rounded-xl px-4 py-2 shadow text-gray-900 border border-yellow-200 hover:border-yellow-400 transition-all duration-200 cursor-pointer">
                   <span className="font-extrabold text-lg tracking-tight">{user.tokens ?? 0}</span>
                   <span className="text-sm font-bold text-amber-700">Tokens</span>
                   {tokenCycleStatus === 'pending' && (

@@ -45,6 +45,7 @@ export async function POST(request: Request) {
       tokenReplenishAt: getTokenCycleEvaluateAtIso(mentor.token_cycle?.tokenUsedAt),
       timezone: mentor.timezone || 'Asia/Kuala_Lumpur',
       accountFrozen: mentor.accountFrozen ?? false,  // ← NEW
+      hasSeenTutorial: mentor.hasSeenTutorial ?? false,
     };
 
     return NextResponse.json(user);

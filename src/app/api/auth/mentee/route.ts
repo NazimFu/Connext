@@ -50,6 +50,7 @@ export async function POST(request: Request) {
       allowCVShare: mentee.allowCVShare ?? false,
       timezone: mentee.timezone || 'Asia/Kuala_Lumpur',
       accountFrozen: mentee.accountFrozen ?? false,  // ← NEW
+      hasSeenTutorial: mentee.hasSeenTutorial ?? false,
     };
 
     return NextResponse.json(user);

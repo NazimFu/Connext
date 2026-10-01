@@ -129,12 +129,14 @@ function MentorCard({
   mentor,
   isFavorited,
   onToggleFavorite,
-  showRequestedBadge
+  showRequestedBadge,
+  isTutorialTarget
 }: {
   mentor: Mentor;
   isFavorited: boolean;
   onToggleFavorite: (mentorUID: string) => void;
   showRequestedBadge?: boolean;
+  isTutorialTarget?: boolean;
 }) {
   const router = useRouter();
   const [isFlipped, setIsFlipped] = useState(false);
@@ -169,6 +171,9 @@ function MentorCard({
       transition={{ duration: 0.3 }}
       className="h-full relative z-0 hover:z-[10000]"
       style={{ perspective: '1000px' }}
+      {...(isTutorialTarget
+        ? { 'data-tutorial': 'select-mentor', 'data-tutorial-href': `/mentor/mentor-listing/${mentor.id}` }
+        : {})}
     >
       <div
         className="relative w-full h-full cursor-pointer"
@@ -692,7 +697,7 @@ export default function MentorsPage() {
             </div>
 
             {/* Filter Section */}
-            <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-2 flex-wrap">
+            <div data-tutorial="filter-mentors" className="flex flex-col md:flex-row md:items-center gap-3 md:gap-2 flex-wrap">
               <span className="text-sm font-semibold text-gray-900 shrink-0">Filter By:</span>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -857,15 +862,16 @@ export default function MentorsPage() {
               <div className="mb-4 text-sm text-gray-600">
                 Found <span className="font-semibold text-yellow-700">{filteredMentors.length}</span> mentor{filteredMentors.length !== 1 ? 's' : ''}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div data-tutorial="browse-mentors" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <AnimatePresence mode="popLayout">
-                  {filteredMentors.map((mentor) => (
+                  {filteredMentors.map((mentor, index) => (
                     <MentorCard
                       key={mentor.id}
                       mentor={mentor}
                       isFavorited={favoriteMentors.includes(mentor.mentorUID)}
                       onToggleFavorite={toggleFavorite}
                       showRequestedBadge={requestedMentors.includes(mentor.mentorUID)}
+                      isTutorialTarget={index === 0}
                     />
                   ))}
                 </AnimatePresence>

@@ -22,6 +22,7 @@ import {
   Crop as CropIcon, Eye, Upload, GripVertical, Plus, Trash2,
 } from 'lucide-react';
 import { useAuth, useRequireAuth } from '@/hooks/use-auth';
+import { useTutorial } from '@/hooks/use-tutorial';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { motion } from 'framer-motion';
 import { getGoogleDriveImageUrl } from '@/lib/utils';
@@ -300,6 +301,7 @@ export default function MentorProfileEditPage() {
 function MentorProfileEdit() {
   const { user, isLoading } = useRequireAuth('mentor');
   const { refreshUser, logout } = useAuth();
+  const { start: startTutorial } = useTutorial();
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -888,6 +890,16 @@ function MentorProfileEdit() {
           {/* Availability */}
           <SectionCard title="Availability schedule" description="Toggle the days you're available, then pick your time slots.">
             <ScheduleSelector schedule={schedule} setSchedule={handleScheduleChange} timezoneLabel={timezoneLabel} />
+          </SectionCard>
+
+          {/* Help */}
+          <SectionCard title="Help" description="Need a refresher on how booking works?">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <p className="text-sm text-neutral-600 max-w-md">Replay the guided walkthrough of browsing mentors, booking a session, and how your token works.</p>
+              <Button variant="outline" onClick={startTutorial} className="border-amber-300 text-amber-700 hover:bg-amber-50">
+                Replay tutorial
+              </Button>
+            </div>
           </SectionCard>
 
           {/* Danger zone */}

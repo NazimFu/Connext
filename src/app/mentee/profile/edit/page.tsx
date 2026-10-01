@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuth, useRequireAuth } from "@/hooks/use-auth"
+import { useTutorial } from "@/hooks/use-tutorial"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Loader2, Eye, Upload, CheckCircle2, AlertCircle, Clock, Trash2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
@@ -63,6 +64,7 @@ function FieldRow({ label, value, onAdd }: { label: string; value?: string; onAd
 export default function EditProfilePage() {
     const { user, isLoading } = useRequireAuth('mentee');
     const { refreshUser, logout } = useAuth();
+    const { start: startTutorial } = useTutorial();
     const { toast } = useToast();
     const router = useRouter();
 
@@ -456,6 +458,16 @@ export default function EditProfilePage() {
                                     <p className="text-xs text-neutral-500 mt-0.5">Sharing your CV increases the likelihood of meeting requests being accepted.</p>
                                 </div>
                             </div>
+                        </div>
+                    </SectionCard>
+
+                    {/* Help */}
+                    <SectionCard title="Help" description="Need a refresher on how booking works?">
+                        <div className="flex items-center justify-between gap-4 flex-wrap">
+                            <p className="text-sm text-neutral-600 max-w-md">Replay the guided walkthrough of browsing mentors, booking a session, and how your token works.</p>
+                            <Button variant="outline" onClick={startTutorial} className="border-amber-300 text-amber-700 hover:bg-amber-50">
+                                Replay tutorial
+                            </Button>
                         </div>
                     </SectionCard>
 

@@ -329,7 +329,7 @@ export default function MentorDetailPage() {
           </CardHeader>
           <CardContent className="pt-6">
             <form onSubmit={handleSubmit} className="grid gap-6">
-              <div>
+              <div data-tutorial="choose-time">
                 <Label className="text-sm font-medium text-gray-700 mb-2 block">Select Date</Label>
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-2 overflow-x-auto">
                   <Calendar
@@ -394,7 +394,7 @@ export default function MentorDetailPage() {
                 </div>
               </div>
 
-              <div>
+              <div data-tutorial="write-message">
                 <Label className="text-sm font-medium text-gray-700 mb-2 block">Leave a Message</Label>
                 <Textarea id="message" placeholder={`Share:\n- what you want to ask\n- your current status\n- any difficulties you are facing`}
                   rows={6} value={message} onChange={(e) => setMessage(e.target.value)}
@@ -402,6 +402,7 @@ export default function MentorDetailPage() {
               </div>
 
               <Button type="submit" size="lg" disabled={isSubmitting || !date || !time}
+                data-tutorial="submit-request"
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">
                 {isSubmitting ? <><Loader2 className="animate-spin mr-2 h-4 w-4" />Submitting...</> : "Submit Request"}
               </Button>

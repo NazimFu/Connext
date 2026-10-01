@@ -10,10 +10,10 @@ const database = cosmosClient.database(process.env.COSMOS_DB_DATABASE_ID!);
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = params.id;
+    const { id } = await params;
     const body = await request.json();
     
     console.log('PATCH /api/users/[id] - ID:', id);
@@ -103,7 +103,8 @@ export async function PATCH(
       'github',
       'cv_link',
       'mentee_name',
-      'role'
+      'role',
+      'hasSeenTutorial'
     ];
 
     // Update only fields that are present in the request body
@@ -146,7 +147,7 @@ export async function PATCH(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
@@ -242,7 +243,7 @@ export async function GET(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
