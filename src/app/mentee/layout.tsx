@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { AccountFrozenOverlay } from '@/components/AccountFrozenOverlay';
 import { ContactSupportButton } from '@/components/ContactSupportButton';
+import { NotificationBell } from '@/components/NotificationBell';
 
 const navigationItems = [
   { title: 'To-Do',          url: '/mentee/notices',        icon: CheckSquare },
@@ -283,6 +284,7 @@ export default function MenteeLayout({ children }: { children: React.ReactNode }
                 <span className="font-extrabold text-sm text-amber-700">{user.tokens ?? 0}</span>
                 <span className="text-xs font-medium text-amber-600">tokens</span>
               </div>
+              <NotificationBell />
               <div className="w-8 h-8 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-md">
                 {user.name?.[0]?.toUpperCase() || 'U'}
               </div>

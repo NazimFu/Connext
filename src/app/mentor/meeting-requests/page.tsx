@@ -121,7 +121,10 @@ export default function MeetingRequestsPage() {
 
   const handleJoinMeeting = (meetingLink?: string, googleMeetUrl?: string) => {
     const link = meetingLink || googleMeetUrl;
-    if (link) window.open(link, '_blank');
+    if (link) {
+      toast({ title: "Before you join", description: "Sessions are hosted on Google Meet — make sure you can sign in to a Google account using this same email." });
+      window.open(link, '_blank');
+    }
     else toast({ variant: "destructive", title: "No Meeting Link", description: "Meeting link is not available yet." });
   };
 

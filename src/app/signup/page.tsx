@@ -11,7 +11,7 @@ import { useState, useEffect } from "react";
 import { auth } from '../../lib/firebase'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { Separator } from "@/components/ui/separator"
-import { Eye, EyeOff } from "lucide-react"
+import { Eye, EyeOff, Info } from "lucide-react"
 
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +42,7 @@ export default function SignupPage() {
         setError('Please enter email and password');
         return;
       }
-      
+
       if (password.length < 6) {
         setError('Password must be at least 6 characters');
         return;
@@ -84,6 +84,10 @@ export default function SignupPage() {
               onChange={(e) => setEmail(e.target.value)}
               className="border-yellow-100/50 focus:border-amber-500 focus:ring-yellow-400/20"
             />
+            <p className="flex items-start gap-1.5 text-xs text-amber-700">
+              <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+              <span>Mentoring sessions are conducted via Google Meet. Please ensure your registered email can be used to sign in to Google before your session.</span>
+            </p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="password" className="text-gray-900">Password</Label>

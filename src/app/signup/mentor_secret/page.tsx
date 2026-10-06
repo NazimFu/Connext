@@ -10,7 +10,7 @@ import { useState } from "react"
 import { auth } from '../../../lib/firebase'
 import { createUserWithEmailAndPassword } from 'firebase/auth'
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Eye, EyeOff } from "lucide-react"
+import { Loader2, Eye, EyeOff, Info } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 export const dynamic = 'force-dynamic';
@@ -144,16 +144,20 @@ export default function MentorSignupPage() {
           </div>
           <div className="grid gap-2">
             <Label htmlFor="email" className="text-gray-900">Email</Label>
-            <Input 
-              id="email" 
-              type="email" 
-              placeholder="mentor@example.com" 
-              required 
+            <Input
+              id="email"
+              type="email"
+              placeholder="mentor@example.com"
+              required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isSubmitting}
               className="border-amber-100/50 focus:border-amber-500 focus:ring-yellow-400/20"
             />
+            <p className="flex items-start gap-1.5 text-xs text-amber-700">
+              <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+              <span>Mentoring sessions are conducted via Google Meet. Please ensure your registered email can be used to sign in to Google before your session.</span>
+            </p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="password" className="text-gray-900">Password</Label>

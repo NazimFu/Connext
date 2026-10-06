@@ -326,6 +326,7 @@ export default function MentorTasksPage() {
   const handleJoinMeeting = () => {
     const meetingUrl = selectedTask?.googleMeetUrl || selectedTask?.meetingLink;
     if (meetingUrl) {
+      toast({ title: 'Before you join', description: 'Sessions are hosted on Google Meet — make sure you can sign in to a Google account using this same email.' });
       window.open(meetingUrl, '_blank', 'noopener,noreferrer');
       setIsDialogOpen(false);
     } else {

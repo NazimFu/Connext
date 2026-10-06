@@ -16,6 +16,7 @@ import type { UserRoleResponse } from "@/lib/types";
 import { auth } from '../../lib/firebase'
 import { signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
 import { Eye, EyeOff } from 'lucide-react'
+import { JUST_SIGNED_IN_KEY, GOOGLE_REMINDER_UNREAD_KEY } from '@/components/NotificationBell'
 
 export const dynamic = 'force-dynamic';
 
@@ -180,7 +181,12 @@ export default function LoginPage() {
       // Only set login success after all checks pass
       setLoginSuccess(true);
       console.log("Login successful with role:", role);
-      
+
+      try {
+        sessionStorage.setItem(JUST_SIGNED_IN_KEY, '1');
+        sessionStorage.setItem(GOOGLE_REMINDER_UNREAD_KEY, '1');
+      } catch {}
+
       toast({
         title: "Login Successful",
         description: `Welcome back!`,

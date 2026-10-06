@@ -305,7 +305,11 @@ export default function MenteeNoticesPage() {
 
   const handleJoinMeeting = () => {
     const url = selectedTask?.googleMeetUrl || selectedTask?.meetingLink;
-    if (url) { window.open(url, '_blank', 'noopener,noreferrer'); setIsDialogOpen(false); }
+    if (url) {
+      toast({ title: 'Before you join', description: 'Sessions are hosted on Google Meet — make sure you can sign in to a Google account using this same email.' });
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setIsDialogOpen(false);
+    }
     else { toast({ variant: 'destructive', title: 'Error', description: 'Meeting link not available.' }); }
   };
 

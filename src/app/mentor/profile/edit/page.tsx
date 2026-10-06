@@ -25,7 +25,7 @@ import { useAuth, useRequireAuth } from '@/hooks/use-auth';
 import { useTutorial } from '@/hooks/use-tutorial';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { motion } from 'framer-motion';
-import { getGoogleDriveImageUrl } from '@/lib/utils';
+import { getGoogleDriveImageUrl, isGoogleEmail } from '@/lib/utils';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle, DialogTrigger,
@@ -700,6 +700,7 @@ function MentorProfileEdit() {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between"><Label className={LABEL}>Email address</Label>{EmailDialog}</div>
             <Input value={formData.mentor_email} disabled className="bg-neutral-50 border-neutral-200 text-neutral-500" />
+            <p className="text-xs text-neutral-500">Mentoring sessions are conducted via Google Meet. Please ensure your registered email can be used to sign in to Google before your session.</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="linkedin" className={LABEL}>LinkedIn profile</Label>
@@ -760,6 +761,13 @@ function MentorProfileEdit() {
               <FieldRow label="LinkedIn" value={formData.linkedin} onAdd={() => setBasicInfoOpen(true)} />
               <FieldRow label="GitHub" value={formData.github} onAdd={() => setBasicInfoOpen(true)} />
             </div>
+
+            {formData.mentor_email && !isGoogleEmail(formData.mentor_email) && (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+                <span>Mentoring sessions are conducted via Google Meet. Please ensure your registered email can be used to sign in to Google before your session.</span>
+              </div>
+            )}
           </div>
 
           {/* Timezone — personal preference */}

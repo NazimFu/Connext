@@ -6,6 +6,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+const GOOGLE_EMAIL_DOMAINS = ['gmail.com', 'googlemail.com'];
+
+/**
+ * Checks whether an email address belongs to a Google account (Gmail).
+ * We require Google accounts since Google Meet is used for mentoring sessions.
+ */
+export function isGoogleEmail(email: string): boolean {
+  const atIndex = email.lastIndexOf('@');
+  if (atIndex === -1) return false;
+  const domain = email.slice(atIndex + 1).trim().toLowerCase();
+  return GOOGLE_EMAIL_DOMAINS.includes(domain);
+}
+
 
 export function getMenteeRedirectPath(user: User): string {
   if (user.role !== 'mentee') return '/';
