@@ -7,8 +7,29 @@ import { TutorialOverlay } from '@/components/tutorial/tutorial-overlay';
 import AppLayout from '@/components/AppLayout';
 
 export const metadata: Metadata = {
-  title: 'Connext',
-  description: 'Unlock your potential with expert mentorship.',
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL || 'https://connext-platform.vercel.app'
+  ),
+  title: {
+    default: 'Connext – Expert Mentorship Platform',
+    template: '%s | Connext',
+  },
+  description:
+    'Connext connects mentees with expert mentors. Book mentorship meetings, grow your career and unlock your potential with expert guidance.',
+  applicationName: 'Connext',
+  alternates: { canonical: '/' },
+  robots: { index: true, follow: true },
+  openGraph: {
+    type: 'website',
+    siteName: 'Connext',
+    title: 'Connext – Expert Mentorship Platform',
+    description: 'Unlock your potential with expert mentorship.',
+    url: '/',
+  },
+  // Paste the token from Google Search Console (HTML tag method) into this env var
+  verification: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
+    ? { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION }
+    : undefined,
 };
 
 export default function RootLayout({
